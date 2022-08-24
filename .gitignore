@@ -1,0 +1,17 @@
+# python things
+.ipynb_checkpoints
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# R things
+.Rhistory
+.Rapp.history
+.RData
+.RDataTmp
+*.utf8.md
+*.knit.md
+
+# other things
