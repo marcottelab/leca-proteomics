@@ -396,6 +396,116 @@ cat elutnorm_to_tidy_cmds.sh | parallel -j16
 # Concatenate elution profiles
 # ::::::::::::::::::::::::::::::::::::::::::
 
+# function for concatenating elut data
+concat_elut <- function(elut_list, psm_thres, outfile_prefix){
+  
+  # function for reading in data
+  read_elut <- function(elut_file){
+    
+    elut_df <- read_delim(elut_file, delim = ",")
+    
+    return(elut_df)
+  }
+  
+  results <- mapply(read_elut, 
+                    elut_file = elut_list)
+  results[1] <- NULL
+  
+  # takes a long time
+  elut_concat <- results %>%
+    reduce(full_join, by = 'X1')
+  elut_concat[is.na(elut_concat)] <- 0
+  
+  path <- dirname(normalizePath(elut_list[1]))
+  
+  # these take a long time to write
+  write_tsv(elut_concat, paste0(path, "/", outfile_prefix, ".raw.txt"))
+}
+
 # ::::::::::::::::::::::::::::::::::::::::::
 # Hierarchical clustering of elution matrix
 # ::::::::::::::::::::::::::::::::::::::::::
+
+# for preliminary visualization;
+# clustered concatenated elution profiles using morpheus:
+# https://software.broadinstitute.org/morpheus/
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Gold standard PPIs (Complex Portal)
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# download data
+curl -l ftp://ftp.ebi.ac.uk/pub/databases/intact/complex/current/complextab/ > gold_ids.txt
+while read sample; do echo "wget http://ftp.ebi.ac.uk/pub/databases/intact/complex/current/complextab/${sample}"; done < gold_ids.txt > get_data.sh
+cat get_data.sh | parallel -j32
+
+# retrieve proteomes from uniprot
+while read id; do echo "perl /project/rmcox/LECA/scripts/retrieve_proteomes.pl ${id}"; done < gold_ids.txt > retrieve_proteomes.sh
+
+# map to eggnog groups
+while read id; do echo "nice -5 python /project/rmcox/programs/eggnog-mapper/emapper.py -i ${id}.fasta --output /project/rmcox/LECA/ms/gold_stds/proteomes/nog_mapping/${id}.euNOG.diamond --override --resume --scratch_dir /project/rmcox/LECA/ms/gold_stds/proteomes/nog_scratch/ --no_file_comments --keep_mapping_files -m diamond"; done < ../gold_ids.txt > map_gold_stds.sh
+cat map_gold_stds.sh | parallel -j30
+
+# format emapper output for all files
+while read code; do echo "Rscript /project/rmcox/LECA/scripts/format_emapper_output.R -f nog_mapping/${code}.euNOG.diamond.emapper.annotations -o nog_mapping/${code}.euNOG.diamond.mapping.2759 -s diamond -l 2759 -v 2 -p ENOG50"; done < ../gold_ids.txt > format_emapper_output_2759.sh # eunog
+
+# format protein IDs into file for input to Claire's mapping script
+Rscript /project/rmcox/LECA/scripts/format_comportal.R -d /project/rmcox/LECA/ms/gold_stds/comportal -p '*tsv' --write_annotations TRUE
+
+# need to re-format emapper output such that: (1) no header, (2) space-separated
+while read code; do echo "Rscript /project/rmcox/LECA/scripts/format_uniprot_ids.R -f /project/rmcox/LECA/ms/gold_stds/proteomes/nog_mapping/${code}.euNOG.diamond.mapping.2759"; done < ../gold_ids.txt > format_uniprot_ids.sh
+cat format_uniprot_ids.sh | parallel -j12
+
+while read code; do echo "tail -n +2 /project/rmcox/LECA/ms/gold_stds/proteomes/nog_mapping/${code}.euNOG.diamond.mapping.2759 | sed 's/\t/ /g' > ac_mappings/${code}.euNOG.diamond.mapping.2759.fmt"; done < ../gold_ids.txt > format_ac_mapping.sh
+
+# run Claire's complex mapping script
+python /project/cmcwhite/data/gold_standards/corum_complexes/translate_corum2.py --complexes /project/rmcox/LECA/ms/gold_stds/ppis/9606.gold.cmplx.txt --mapping /project/rmcox/LECA/ms/gold_stds/ac_mappings/9606.euNOG.diamond.mapping.2759.fmt --outfile 9606.euNOG.gold.cmplx.txt
+
+while read code; do echo "python /project/cmcwhite/data/gold_standards/corum_complexes/translate_corum2.py --complexes /project/rmcox/LECA/ms/gold_stds/ppis/${code}.gold.cmplx.txt --mapping /project/rmcox/LECA/ms/gold_stds/ac_mappings/${code}.euNOG.diamond.mapping.2759.fmt --outfile ${code}.euNOG.gold.cmplx.txt"; done < ../gold_ids.txt > map_gold_ppis.sh
+
+# some of these didn't work, potentially because: (1) prokaryotic and/or (2) file contains only 1 gold std complex
+find -size 0
+./9615.euNOG.gold.cmplx.txt # Canis lupus familiaris, 1 complex
+./562.euNOG.gold.cmplx.txt # Escherichia coli, prokaryote
+./7788.euNOG.gold.cmplx.txt # Torpedo marmorata, 1 complex
+./7787.euNOG.gold.cmplx.txt # Tetronarce californica, 1 complex
+./83333.euNOG.gold.cmplx.txt # Escherichia coli (strain K12), prokaryote
+./9940.euNOG.gold.cmplx.txt # Ovis aries, 1 complex 
+./6523.euNOG.gold.cmplx.txt # Lymnaea stagnalis, 1 complex
+
+# get unique list of all gold standard euNOG identifiers
+# make sure euNOG complex file isn't empty, then append it to file all.euNOG.cmplx.txt
+rm all.euNOG.gold.cmplx.txt
+touch all.euNOG.gold.cmplx.txt
+for file in *[[:digit:]]*.euNOG.gold.cmplx.txt; do
+	if [ -s $file ]; then cat ${file} >> all.euNOG.gold.cmplx.txt; fi
+done
+
+sed 's/ /\n/g' all.euNOG.gold.cmplx.txt | sort | uniq | wc -l # 2599 unique gold standard orthogroups
+
+sed 's/ /\n/g' all.euNOG.gold.cmplx.txt | sort -u > all.euNOG.gold_prots.unique.txt
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Gold standard PPIs (CORUM)
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# make eggNOG file for CORUM complexes
+# 10090 = mouse, 10116 = rat, 9606 = human, 9913 = bovine, 9823 = pig
+touch corum.euNOG.diamond.mapping.2759.fmt
+while read x; do cat ${x}.euNOG.diamond.mapping.2759.fmt >> corum.euNOG.diamond.mapping.2759.fmt; done < ../corum_codes.txt
+
+# run complex mapping script
+python /project/cmcwhite/data/gold_standards/corum_complexes/translate_corum2.py --complexes /project/rmcox/LECA/ms/gold_stds/corum/corum.cmplx.txt --mapping /project/rmcox/LECA/ms/gold_stds/ac_mappings/corum.euNOG.diamond.mapping.2759.fmt --outfile /project/rmcox/LECA/ms/gold_stds/corum/corum.euNOG.gold.cmplx.txt
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Gold standard PPIs (manual ARATH data)
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# previously acquired ARATH data in /project/rmcox/LECA/ms/gold_stds/:
+./proteomes/3702.fasta
+./nog_mapping/3702.euNOG.diamond.mapping.2759
+./ac_mappings/3702.euNOG.diamond.mapping.2759.fmt
+./comportal/3702.annotations.gold.cmplx.txt
+
+# run complex mapping script
+python /project/cmcwhite/data/gold_standards/corum_complexes/translate_corum2.py --complexes /project/rmcox/LECA/ms/gold_stds/claire/claire.cmplx.txt --mapping /project/rmcox/LECA/ms/gold_stds/ac_mappings/3702.euNOG.diamond.mapping.2759.fmt --outfile /project/rmcox/LECA/ms/gold_stds/claire/claire.euNOG.gold.cmplx.txt

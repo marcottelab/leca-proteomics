@@ -402,7 +402,7 @@ curl -l ftp://massive.ucsd.edu/MSV000079440/raw/ > sample_list.txt
 # Downloading, creating, and mapping proteomes
 #######################################################################################
 
-# rotifer
+# rotifer did not have a reference proteome;
 # transcriptome that has been convering to CDS was downloaded:
 wget https://sra-download.ncbi.nlm.nih.gov/traces/wgs01/wgs_aux/GI/NZ/GINZ01/GINZ01.1.fsa_nt.gz
 gunzip GINZ01.1.fsa_nt.gz
@@ -1484,11 +1484,6 @@ wc -l */*/output/*group | tail -n 1 >> num_meas.txt  # 13236665 total
 # the ms subdirectory still pretty massive
 # anna got pretty upset about this, better not try it again
 rsync -avrWL rmcox@hopper.icmb.utexas.edu:/project/rmcox/LECA/ms/ ms/
-
-
-~/bin/cmake-3.22.1/bin/
-/stor/home/rmcox/.local/bin
-
 
 ### // TO DO LIST //
 # - ML model tuning:
