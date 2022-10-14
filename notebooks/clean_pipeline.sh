@@ -357,10 +357,6 @@ cat group_to_elut_cmds.sh | parallel -j16 2>&1 | tee group_to_elut.log
 # see if any didn't work
 grep 'IOError' group_to_elut.log
 
-# these 2 didn't work
-IOError: File /project/rmcox/LECA/ms/cfms/processed/camnx/bng_10/output/*.group does not exist # no prots for whole experiment
-IOError: File /project/rmcox/LECA/ms/cfms/processed/human/iex_17/output/*.group does not exist # no mzXMLs... symlink didn't work
-
 # made my own script here for processing to tidy format:
 /project/rmcox/LECA/scripts/elut2tidy.R
 
@@ -509,3 +505,14 @@ python /project/cmcwhite/data/gold_standards/corum_complexes/translate_corum2.py
 
 # run complex mapping script
 python /project/cmcwhite/data/gold_standards/corum_complexes/translate_corum2.py --complexes /project/rmcox/LECA/ms/gold_stds/claire/claire.cmplx.txt --mapping /project/rmcox/LECA/ms/gold_stds/ac_mappings/3702.euNOG.diamond.mapping.2759.fmt --outfile /project/rmcox/LECA/ms/gold_stds/claire/claire.euNOG.gold.cmplx.txt
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Gold standard PPIs (merging similar complexes)
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# kevin's script
+python /project/rmcox/github_repos/protein_complex_maps/protein_complex_maps/preprocessing_util/complexes/complex_merge.py --help
+
+python /project/rmcox/github_repos/protein_complex_maps/protein_complex_maps/preprocessing_util/complexes/complex_merge.py --cluster_filename all.gold.cmplx.txt --output_filename all.gold.cmplx.merged.humap.txt --merge_threshold 0.6 --complex_size_threshold 30
+
+# this is also built into the cfmsflow pipeline

@@ -1419,6 +1419,13 @@ mv parameters.json parameters12.json
 # need to remove ribosomal proteins from gold standard file
 grep '60S' leca_eunog_annots.020722.tsv | awk -F'\t' '{print $1}'
 
+"_goldstandard_complexes": "/stor/work/Marcotte/project/rmcox/LECA/ms/gold_stds/all.gold.cmplx.noRibos.txt"
+"postrain": "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.train_ppis.ordered"
+"negtrain": "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/negtrain",
+"postest": "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.test_ppis.ordered",
+"negtest": "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/negtest"
+"annotation_file": "/stor/work/Marcotte/project/rmcox/LECA/ms/annotations/leca_eunog_annots.020722.tsv"
+
 #######################################################################################
 # Debugging weird gold standard behavior
 #######################################################################################
@@ -1640,3 +1647,30 @@ tr|I7MM63|I7MM63_TETTS:0.334459
 
 # get summed pep counts
 python2 /stor/work/Marcotte/project/rmcox/LECA/scripts/msblender2elution.py --prot_count_files *.1  --output_filename tetts_iex1.pepcount --fraction_name_from_filename --msblender_format --spectral_count_type TotalCount --pepcount
+
+
+####
+# path to example slurm for colabfold
+####
+
+/work/08481/epenning/shared/launchers/sample_cf_launcher.slurm
+
+
+###
+# xlink mapping coe
+###
+
+https://github.com/yaviddang20/cilia_xlink_new/tree/master/results
+
+
+I7M1V2
+I7MFE5
+I7MIE6
+tetts.euNOG.diamond.mapping.2759:tr|I7MIG3|I7MIG3_TETTS KOG0959
+tetts.euNOG.diamond.mapping.2759:tr|Q22B82|Q22B82_TETTS KOG0959
+tetts.euNOG.diamond.mapping.2759:tr|Q22DP0|Q22DP0_TETTS KOG0959
+tetts.euNOG.diamond.mapping.2759:tr|Q234R9|Q234R9_TETTS KOG0959
+tetts.euNOG.diamond.mapping.2759:tr|Q240X2|Q240X2_TETTS KOG0959
+tetts.euNOG.diamond.mapping.2759:tr|Q24FK4|Q24FK4_TETTS KOG0959
+tetts.euNOG.diamond.mapping.2759:tr|W7XJC2|W7XJC2_TETTS KOG0959
+tetts.euNOG.diamond.mapping.2759:tr|W7XLL4
