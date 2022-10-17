@@ -516,3 +516,20 @@ python /project/rmcox/github_repos/protein_complex_maps/protein_complex_maps/pre
 python /project/rmcox/github_repos/protein_complex_maps/protein_complex_maps/preprocessing_util/complexes/complex_merge.py --cluster_filename all.gold.cmplx.txt --output_filename all.gold.cmplx.merged.humap.txt --merge_threshold 0.6 --complex_size_threshold 30
 
 # this is also built into the cfmsflow pipeline
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Supervised learning for protein interactions (cfmsflow)
+# ::::::::::::::::::::::::::::::::::::::::::
+
+nextflow main.nf -params-file example_params/example_wholepipeline.json  # this works now
+NXF_VER=20.04.1.5335 nextflow main.nf –params-file example_params/example_wholepipeline.json
+/home/cmcwhite/programs/nextflow main.nf -params-file example_params/example_wholepipeline.json
+
+# make feature matrix
+../nextflow main.nf -params-file generate_params.json --entrypoint 1 --exitpoint 2
+
+# train model
+nextflow main.nf -params-file generate_params.json --entrypoint 3 --exitpoint 5
+
+# gold standards:
+/project/cmcwhite/data/gold_standards/corum_complexes/*
