@@ -1,0 +1,1827 @@
+---
+title: "LECA"
+author: "Rachael M. Cox"
+date: "12/17/2019"
+output: html_document
+---
+
+
+```{r global options}
+
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(ape)
+library(ggtree)
+library(data.table)
+library(colorspace)
+library(VennDiagram)
+library(ggthemes)
+library(cowplot)
+library(scales)
+
+setwd('/project/rmcox/')
+theme_set(theme_cowplot())
+
+palette_OkabeIto <- c("#E69F00", 
+                      "#56B4E9", 
+                      "#009E73", 
+                      "#F0E442", 
+                      "#0072B2", 
+                      "#D55E00", 
+                      "#CC79A7", 
+                      "#999999")
+palette_pretty <- c("#009E24",  # green
+                    "#0072B2",  # sky blue
+                    "#E69F00",  # dark yellow
+                    "#FF0000",  # bright red
+                    "#979797",  # grey
+                    "#5530AA",  # purple
+                    "#1E1E1E")  # dark grey
+palette_cb14 <- c("#ebac23",  # yellow
+                  "#b80058",  # lipstick
+                  "#008cf9",  # azure
+                  "#006e00",  # green
+                  "#00bbad",  # caribbean
+                  "#d163e6",  # lavender
+                  "#b24502",  # brown
+                  "#ff9287",  # coral
+                  "#5954d6",  # indigo
+                  "#00c6f8",  # turquiose
+                  "#878500",  # olive
+                  "#00a76c",  # jade
+                  "#979797",  # grey
+                  "#1e1e1e")  # dark grey
+
+palette_cb10 <- c("#ebac23",  # yellow
+                  "#b80058",  # lipstick
+                  "#008cf9",  # azure
+                  "#006e00",  # green
+                  "#00bbad",  # caribbean
+                  "#d163e6",  # lavender
+                  "#b24502",  # brown
+                  "#ff9287",  # coral
+                  "#5954d6",  # indigo
+                  "#00c6f8",  # turquiose
+                  "#878500",  # olive
+                  "#00a76c",  # jade
+                  "#979797",  # grey
+                  "#1e1e1e")  # dark grey
+
+show_col(palette_OkabeIto)
+`%!in%` = Negate(`%in%`)
+```
+
+#########################################################################################
+# DISEASE ANALYSIS
+#########################################################################################
+
+```{r gene age consensus data}
+
+# statistics:
+# entropy = how certain the age-call is; the lower the better
+# bimodality = how much different algorithms agree on the age of the gene
+
+human_gene_ages <- read_csv("HUMAN_gene_ages.csv") %>%
+  clean_names() %>%
+  rename(uniprotID = X1)
+
+# age category descriptions:
+# Euk+Bac = all HGTs before LECA
+old_genes = c("Cellular_organisms","Euk+Bac","Euk_Archaea","Eukaryota")
+
+human_LECA_genes <- human_gene_ages %>%
+  filter(mode_age %in% old_genes) %>%
+  filter(entropy <= 1)
+
+skim(human_LECA_genes)
+
+```
+
+```{r annotation tables}
+
+human_disease_annot <- read_tsv("../proteomes/human/human_proteome_disease_annotations.tab") %>%
+  clean_names()
+
+human_AP1_prots <- read_tsv("positive_controls/human_AP-1_prots.tsv") %>%
+  clean_names()
+
+human_gene_names <- read_tsv("../proteomes/human/annotations/human_proteome_gene_annotations.tab") %>%
+  clean_names()
+
+human_eunog_groups <- read_tsv("../proteomes/human/eggnog_mapping/human_UP000005640_euNOG.mapping") %>%
+  mutate(ProteinID = str_extract(ProteinID,'(?<=\\|)(.*)(?=\\|)'))
+
+human_AP1_nogs <- human_AP1_prots %>%
+  left_join(human_eunog_groups, by = c("entry" = "ProteinID")) %>%
+  select(ID, everything())
+
+human_all_nogs <- human_gene_names %>%
+  left_join(human_eunog_groups, by = c("entry" = "ProteinID")) %>%
+  select(ID, everything())
+
+MIM_annot <- read_tsv("OMIM_data/mimTitles.txt") %>%
+  clean_names()
+
+LECA_genes_disease_annot <- human_LECA_genes %>%
+  select(uniprotID, entropy) %>%
+  left_join(human_disease_annot, by = c("uniprotID" = "entry"))
+
+LECA_orthogroups <- human_LECA_genes %>%
+  select(uniprotID) %>%
+  left_join(human_eunog_groups, by = c("uniprotID" = "ProteinID"))
+
+```
+
+```{r analysis}
+
+# this is the total number of unique orthogroups in LECA
+LECA_orthogroups %>% 
+  select(ID) %>% 
+  unique # 4829 orthogroups
+
+skim(LECA_orthogroups) # 137 NAs
+
+LECA_duplication_estimate <- LECA_orthogroups %>% 
+  group_by(ID) %>% 
+  tally() %>% 
+  arrange(desc(n))
+
+# these are the human LECA genes with unknown molecular function
+LECA_unknown <- LECA_genes_disease_annot %>%
+  filter(is.na(gene_ontology_molecular_function)) # 1061
+
+# these are the human LECA genes known to be associated with genetic disorders
+LECA_known_disease_genes_MIM <- LECA_genes_disease_annot %>%
+  filter(!is.na(cross_reference_mim)) %>%
+  select(uniprotID, cross_reference_mim) %>%
+  mutate(cross_reference_mim = str_replace(cross_reference_mim, ';$', '')) %>%
+  separate_rows(cross_reference_mim, sep = ";") %>%
+  mutate(cross_reference_mim = as.numeric(cross_reference_mim)) %>%
+  left_join(MIM_annot, by = c("cross_reference_mim" = "mim_number")) %>%
+  left_join(LECA_orthogroups, by = c("uniprotID")) %>%
+  select(ID, uniprotID, everything())
+
+LECA_known_disease_genes_MIM %>% filter(prefix != "Plus")
+
+# these are the human LECA genes with unknown disease phenotype
+LECA_no_MIM <- LECA_genes_disease_annot %>%
+  filter(is.na(cross_reference_mim)) # 1259
+
+# in the human genome, these are all the genes with a MIM number (known disease phenotype)
+all_human_MIM <- human_disease_annot %>%
+  filter(!is.na(cross_reference_mim))
+
+# these are the MIM diseases with established phenotype & suspected Mendelian inheritance (unknown genotype)
+MIM_annot %>% filter(prefix == "NULL")
+
+# these are the MIM diseases with a confirmed mendelian phenotype or phenotypic locus for which the underlying molecular basis is not known
+MIM_annot %>% filter(prefix == "Percent")
+
+# these are the LECA genes with MIM numbers but no characterization
+LECA_known_disease_genes_MIM %>% filter(prefix == "NULL" | prefix == "Percent") # 33. not that many
+
+```
+
+```{r disease enrichments}
+
+LECA_HSP <- LECA_genes_disease_annot %>%
+  filter(grepl('Heat shock protein', protein_names,
+               ignore.case = TRUE))  %>%
+  mutate(cross_reference_mim = str_replace(cross_reference_mim, ';$', '')) %>%
+  separate_rows(cross_reference_mim, sep = ";") %>%
+  mutate(cross_reference_mim = as.numeric(cross_reference_mim)) %>%
+  left_join(MIM_annot, by = c("cross_reference_mim" = "mim_number")) %>%
+  left_join(LECA_orthogroups, by = c("uniprotID")) %>%
+  select(ID, uniprotID, involvement_in_disease, 
+         preferred_title_symbol, alternative_title_s_symbol_s,
+         everything())
+
+all_ancient_diseases <- LECA_genes_disease_annot %>%
+  mutate(cross_reference_mim = str_replace(cross_reference_mim, ';$', '')) %>%
+  separate_rows(cross_reference_mim, sep = ";") %>%
+  mutate(cross_reference_mim = as.numeric(cross_reference_mim))
+  
+LECA_ciliary <- all_ancient_diseases %>%
+  filter(grepl('cilia', protein_names,
+               ignore.case = TRUE)) %>%
+  left_join(MIM_annot, by = c("cross_reference_mim" = "mim_number")) %>%
+  left_join(LECA_orthogroups, by = c("uniprotID")) %>%
+  select(ID, uniprotID, involvement_in_disease, 
+         preferred_title_symbol, alternative_title_s_symbol_s,
+         everything()) %>%
+  unique()
+
+LECA_basalbody <- all_ancient_diseases %>%
+  filter(grepl('basal body', gene_ontology_cellular_component,
+               ignore.case = TRUE)) %>%
+  left_join(MIM_annot, by = c("cross_reference_mim" = "mim_number")) %>%
+  left_join(LECA_orthogroups, by = c("uniprotID")) %>%
+  select(ID, uniprotID, involvement_in_disease, 
+         preferred_title_symbol, alternative_title_s_symbol_s,
+         everything()) %>%
+  unique()
+
+LECA_mitochondria <- all_ancient_diseases %>%
+  filter(grepl('mitochondria', protein_names,
+               ignore.case = TRUE)) %>%
+  #filter(grepl('isc', gene_names,
+  #             ignore.case = TRUE) |
+  #         grepl('suf', gene_names,
+  #               ignore.case = TRUE)) %>% 
+  left_join(MIM_annot, by = c("cross_reference_mim" = "mim_number")) %>%
+  left_join(LECA_orthogroups, by = c("uniprotID")) %>%
+  select(ID, uniprotID, gene_names, involvement_in_disease, 
+         preferred_title_symbol, alternative_title_s_symbol_s,
+         everything()) %>%
+  unique() %>%
+  filter(entropy <= 0.5) %>% 
+  arrange(entropy)
+
+LECA_nuclear <- all_ancient_diseases %>%
+  #filter(grepl('nuclear pore', protein_names,
+  #             ignore.case = TRUE)) %>%
+  filter(grepl('nup', gene_names,
+               ignore.case = TRUE)) %>% 
+  left_join(MIM_annot, by = c("cross_reference_mim" = "mim_number")) %>%
+  left_join(LECA_orthogroups, by = c("uniprotID")) %>%
+  select(ID, uniprotID, gene_names, involvement_in_disease, 
+         preferred_title_symbol, alternative_title_s_symbol_s,
+         everything()) %>%
+  unique() %>%
+  filter(entropy <= 1) %>% 
+  arrange(entropy)
+
+LECA_ESCRT <- all_ancient_diseases %>%
+  filter(grepl('escrt', protein_names,
+               ignore.case = TRUE) | 
+           grepl('autophagosome', gene_ontology_cellular_component,
+               ignore.case = TRUE)) %>% 
+  left_join(MIM_annot, by = c("cross_reference_mim" = "mim_number")) %>%
+  left_join(LECA_orthogroups, by = c("uniprotID")) %>%
+  select(ID, uniprotID, gene_names, involvement_in_disease, 
+         preferred_title_symbol, alternative_title_s_symbol_s,
+         everything()) %>%
+  unique() %>%
+  filter(entropy <= 0.5) %>% 
+  arrange(entropy)
+
+LECA_glycan <- all_ancient_diseases %>%
+  filter(grepl('N-glycan processing', gene_ontology_biological_process,
+               ignore.case = TRUE)) %>% 
+  left_join(MIM_annot, by = c("cross_reference_mim" = "mim_number")) %>%
+  left_join(LECA_orthogroups, by = c("uniprotID")) %>%
+  select(ID, uniprotID, gene_names, involvement_in_disease, 
+         preferred_title_symbol, alternative_title_s_symbol_s,
+         everything()) %>%
+  unique() %>%
+  #filter(entropy <= 1) %>% 
+  arrange(entropy)
+
+
+
+```
+
+```{r leca diseases 10212020}
+
+human_leca <- read_delim("LECA/qfo_tree/human_leca_uniprotIDs.txt", 
+                         delim = "\n", col_names = FALSE) %>% 
+  rename(ProteinID = X1)
+
+# 10/21/20
+human_disease_annot <- read_tsv("LECA/human_disease_annot_uniprot.txt") %>%
+  clean_names()
+
+humdis_locs <- human_disease_annot %>%
+  mutate(localization = str_extract_all(subcellular_location_cc,
+                                             '(?<=: )(.+?)(?=.$| \\{ECO)')) %>%
+  unnest(cols = c(localization)) %>% 
+  mutate(localization = str_remove(localization, '\\[.*\\]:')) %>%
+  mutate(localization = str_remove(localization, ';.*')) %>%
+  mutate(localization = str_remove(localization, 'Note=.*')) %>%
+  separate_rows(localization, sep = '\\. ') %>%
+  mutate(localization = str_remove(localization, ',\\s.*')) %>%
+  mutate(localization = str_remove(localization, '\\.$')) %>%
+  group_by(entry) %>%
+  mutate(loc = ifelse(length(gene_names_primary) > 1, "Multi-compartment", localization)) %>%
+  mutate(loc = replace_na(loc, 'Not annotated')) %>%
+  mutate(loc = case_when(str_detect(loc, 'Mitochondrion') == TRUE ~ 'Mitochondrion',
+                         str_detect(loc, 'reticulum|Microsome') == TRUE ~ 'Endoplasmic reticulum',
+                         str_detect(loc, 'Lysosome') == TRUE ~ 'Lysosome',
+                         str_detect(loc, 'Cytoplasm$') == TRUE ~ 'Cytoplasm',
+                         str_detect(loc, 'Nucleus|Chromosome') == TRUE ~ 'Nucleus',
+                         str_detect(loc, 'Early endosome|Endosome membrane|Late endosome|Endosome') == TRUE ~ 'Cytoplasmic vesicle',
+                         str_detect(loc, '[mM]embrane|receptor|surface') == TRUE ~ 'Membrane',
+                         str_detect(loc, 'Secreted') == TRUE ~ 'Secreted',
+                         str_detect(loc, 'autophago|granule') == TRUE ~ 'Cytoplasmic vesicle',
+                             TRUE ~ loc)) %>%
+  select(entry, loc) %>%
+  unique() %>%
+  ungroup()
+
+dis_groups <- human_disease_annot %>% 
+  mutate(disease_names = str_extract_all(involvement_in_disease,
+                                             '(?<=DISEASE: )(.+?)(?= \\[MIM)')) %>%
+  unnest(disease_names) %>% 
+  mutate(disease_names = str_remove(disease_names, '\\[.*\\]: ')) %>%
+  mutate(disease_group = str_sub(disease_names, 1, 5)) %>%
+  select(entry, gene_names_primary, protein_names, involvement_in_disease, disease_names, disease_group) %>%
+  mutate(group_num = dense_rank(disease_group)) %>%
+  group_by(disease_group) %>%
+  mutate(num_group_members = n()) %>%
+  mutate(LECA = case_when(entry %in% human_leca$ProteinID ~ 1, TRUE ~ 0)) %>%
+  arrange(disease_group) %>% 
+  left_join(humdis_locs)
+
+dis_groups %>% filter(num_group_members >= 10) %>%
+  select(disease_names) %>%
+  unique()
+
+locjoin <- dis_groups %>%
+  select(entry, gene_names_primary, disease_group) %>%
+  left_join(humdis_locs) %>%
+  unique()
+
+#write_csv(dis_groups, "LECA/human_disease_groups.csv")
+
+dis_groups_cov <- dis_groups %>%
+  group_by(disease_group) %>%
+  summarize(LECA_prop = mean(LECA))
+
+dis_groups_covloc <- dis_groups %>%
+  select(entry, gene_names_primary, disease_group, num_group_members, LECA) %>%
+  group_by(disease_group) %>%
+  mutate(num_LECA = sum(LECA)) %>% 
+  left_join(locjoin) %>%
+  select(-entry, -gene_names_primary) %>% 
+  filter(LECA == 1) %>%
+  left_join(dis_groups_cov) %>%
+  add_count(loc, name = "nloc") %>%
+  unique() %>%
+  group_by(disease_group, loc) %>%
+  summarize(locprop = (LECA_prop/num_LECA)*nloc)
+
+disgroup_labs <- dis_groups %>%
+  count(disease_names, disease_group) %>%
+  slice(which.max(n)) %>%
+  select(-n)
+
+dis_groups_LECA_cov <- dis_groups %>%
+  mutate(num_LECA = sum(LECA)) %>%
+  left_join(dis_groups_cov) %>%
+  mutate(fraction = paste(num_LECA, num_group_members, sep = "/")) %>% 
+  select(gene_names_primary, disease_group, num_group_members, num_LECA,
+         fraction, LECA, LECA_prop) %>%
+  unique() %>% 
+  left_join(disgroup_labs) %>%
+  arrange(disease_group) %>%
+  ungroup()
+
+#write_csv("LECA/human_disease_groups_LECAprop.csv")
+
+dis_groups_LECA_cov %>%
+  filter(num_group_members >= 1) %>%
+  left_join(dis_groups_covloc) %>%
+  mutate(loc = replace_na(loc, 'Not annotated')) %>%
+  ggplot(aes(x = as.factor(LECA), y = num_group_members)) +
+    geom_violin(fill = "grey40") +
+    geom_jitter(size = 3, alpha = 0.2, aes(color = loc)) +
+    ylab("Human genes/disease") +
+    xlab("0 = Human genes in LECA, 1 = Younger human genes not in LECA") +
+    scale_color_manual(values = palette_cb14) +
+  facet_wrap(~loc, ncol = 5) +
+  theme(legend.position = "none")
+
+# histograms
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+phist1 <- dis_groups_LECA_cov %>%
+  filter(num_group_members >= 1) %>% 
+  ggplot(aes(x = LECA_prop)) +
+    geom_histogram(bins = 20, fill = "#b80058") +
+    ylab("Number of diseases\n(n = 5805 gene-disease associations)") +
+    xlab("Proportion of genes traced back to LECA")
+
+  ggsave("LECA/figures/leca_dis_histogram_all.png", phist1,
+         device = "png", width = 8, height = 6, units = "in")
+  ggsave("LECA/figures/leca_dis_histogram_all.pdf", phist1, 
+         device = "pdf", width = 8, height = 6, units = "in")
+
+phist2 <- dis_groups_LECA_cov %>%
+  filter(num_group_members >= 10) %>% 
+  ggplot(aes(x = LECA_prop)) +
+    geom_histogram(bins = 20, fill = "#b80058") +
+    ylab("Number of diseases\n(diseases w/ annotated genes >= 10; n = 3717)") +
+    xlab("Proportion of genes traced back to LECA")
+  ggsave("LECA/figures/leca_dis_histogram_10min.png", phist2,
+         device = "png", width = 8, height = 6, units = "in")
+  ggsave("LECA/figures/leca_dis_histogram_10min.pdf", phist2, 
+         device = "pdf", width = 8, height = 6, units = "in")
+
+# set up df for plots
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+LECA_fig <- dis_groups_LECA_cov %>%
+  select(-gene_names_primary, -LECA) %>%
+  unique() %>% 
+  mutate(disease_names = str_remove(disease_names, pattern = "\\d \\(.*\\)")) %>%
+  mutate(disease_names = str_remove(disease_names, pattern = " \\(.*\\)")) %>%
+  mutate(disease_names = str_remove(disease_names, pattern = ",\\s.*")) %>%
+  mutate(disease_names = str_remove(disease_names, pattern = "\\d$|\\d[a-zA-Z]$")) %>%
+  # mutate(wrapped_names = paste(strwrap(disease_names, 35), 
+  #                              collapse = "\n")) %>%
+  left_join(dis_groups_covloc) %>%
+  mutate(loc = replace_na(loc, 'Not annotated')) %>%
+  mutate(locprop = replace_na(locprop, 0))
+
+names(palette_cb14) <- levels(LECA_fig$loc)
+LECA_fig$floc <- factor(LECA_fig$loc)
+
+# scatter plot? --> yes I like this
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+label_subset <- LECA_fig %>%
+  select(disease_names, num_group_members, num_LECA, LECA_prop) %>%
+  unique() %>%
+  filter(LECA_prop > 0.67, num_group_members >= 10) %>% 
+  arrange(desc(LECA_prop)) %>%
+  slice_head(n = 15)
+
+label_subset2 <- LECA_fig %>%
+  select(disease_names, num_group_members, num_LECA, LECA_prop) %>%
+  unique() %>%
+  filter(LECA_prop > 0.6, num_group_members >= 30) %>% 
+  arrange(desc(LECA_prop)) %>%
+  slice_head(n = 15)
+
+label_subset <- bind_rows(label_subset, label_subset2) %>%
+  unique()
+  
+pscatter <- LECA_fig %>%
+  select(disease_names, num_group_members, num_LECA) %>%
+  unique() %>%
+  filter(num_group_members >= 10) %>% 
+ggplot(aes(x = num_group_members, y = (num_LECA/num_group_members)*100, 
+           color = (num_LECA/num_group_members)*100, label = disease_names)) +
+  geom_point(alpha = 0.75, size = 5) +
+  theme(panel.grid.major = element_line(colour = palette_pretty[6], 
+                                      size = 0.1, linetype = "dashed"),
+        panel.grid.minor = element_line(colour = palette_pretty[6], 
+                                      size = 0.1, linetype = "dashed")) +
+  coord_fixed() +
+  scale_color_distiller(palette = "YlGnBu", direction = 1) +
+  #theme(legend.position = c(0.1, 0.8)) +
+  theme(legend.position = "none") +
+  geom_text_repel(data = label_subset,
+                size = 7/.pt, # font size
+                fontface = "bold",
+                alpha = 1.0,
+                hjust = 0.2,
+                point.padding = unit(0.5, "lines"), 
+                box.padding = unit(0.5, "lines"),
+                nudge_y = -0.3,
+                nudge_x = 0.8, 
+                colour = palette_cb14[14],
+                set.seed(3333)) +
+  xlab("Number of human genes/disease (minimum # of genes/disease = 10)") +
+  ylab("Percentage of genes originating in LECA")
+  #ylab("Number of genes originating in LECA") #+
+  #labs(color = "% of genes\nin LECA")
+pscatter
+
+ggsave("LECA/figures/leca_dis_scatter_10min.pdf", plot = pscatter, device = "pdf", 
+       width = 8, height = 6, units = "in")
+  
+ggsave("LECA/figures/leca_dis_scatter_10min.png", plot = pscatter, device = "png", 
+       width = 8, height = 6, units = "in")
+  
+# bar plot, >50% coverage, no colors, >= 10 genes/group
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+uniq <- LECA_fig %>%
+  select(disease_names, num_group_members, num_LECA, fraction,
+         LECA_prop) %>%
+  filter(num_group_members >= 10) %>% 
+  unique() 
+
+pcov <- ggplot(data = na.omit(transform(uniq,
+                        fct = cut(LECA_prop, seq(0, 1, 0.50)))),
+       aes(x = fct_reorder(disease_names, LECA_prop, max), 
+                       y = LECA_prop*100, 
+           label = fraction, na.rm = TRUE)) +
+  geom_text(nudge_y = 3) +
+  geom_col(aes(fill = fct)) +
+  xlab("") +
+  ylab("% of genes that originate in LECA (minimum group size = 5)") +
+  #facet_wrap(~fct, nrow = 3, scales = 'free_y') +
+  theme(axis.text = element_text(size = 8)) +
+  coord_flip() +
+  theme(strip.background = element_blank(),
+        strip.text.x = element_blank()) +
+  scale_fill_manual(values = palette_cb14)
+
+ggsave("LECA/figures/leca_dis_coverage_10_min.pdf", plot = pcov, device = "pdf", 
+       width = 18, height = 18, units = "in")
+  
+ggsave("LECA/figures/leca_dis_coverage_10_min.png", plot = pcov, device = "png", 
+       width = 18, height = 18, units = "in")
+  
+
+# least coverage (<=25%)
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+q1 <- LECA_fig %>%
+  filter(num_group_members >= 10, 
+         LECA_prop <= 0.25)
+
+q1p <- ggplot(q1, aes(x = disease_names, 
+                              y = locprop*100, 
+                              fill = floc)) +
+  geom_col() +
+  scale_fill_manual(name = "loc", values = palette_cb14,
+                    limits = levels(LECA_fig$floc), drop = TRUE) +
+  ylab("Percentage of human genes associated with each disease that trace back to LECA") +
+  guides(fill = guide_legend(title = "Subcellular location")) +
+  theme(axis.title.y = element_blank()) +
+  coord_flip()
+q1p
+
+ggsave("LECA/figures/leca_dis_coverage_bottomquartile_wcomps_10min.pdf", plot = q1p, device = "pdf", 
+       width = 18, height = 6, units = "in")
+  
+ggsave("LECA/figures/leca_dis_coverage_bottomquartile_wcomps_10min.png", plot = q1p, device = "png", 
+       width = 18, height = 6, units = "in")
+
+# medium coverage (>25% & <=50%)
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+q2 <- LECA_fig %>%
+  filter(num_group_members >= 10, 
+         LECA_prop > 0.25 & LECA_prop <= 0.50)
+
+q2p <- ggplot(q2, aes(x = disease_names, 
+                              y = locprop*100, 
+                              fill = floc)) +
+  geom_col() +
+  scale_fill_manual(name = "loc", values = palette_cb14,
+                    limits = levels(LECA_fig$floc), drop = TRUE) +
+  ylab("Percentage of human genes associated with each disease that trace back to LECA") +
+  guides(fill = guide_legend(title = "Subcellular location"))
+  theme(axis.title.y = element_blank()) +
+  coord_flip()
+q2p
+
+# medium coverage (>50% & <=75%)
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+q3 <- LECA_fig %>%
+  filter(num_group_members >= 10, 
+         LECA_prop > 0.50 & LECA_prop <= 0.75)
+
+q3p <- ggplot(q3, aes(x = disease_names, 
+                              y = locprop*100, 
+                              fill = floc)) +
+  geom_col() +
+  #geom_text(aes(label = fraction), stat = "identity") +
+  #theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  scale_fill_manual(name = "loc", values = palette_cb14,
+                    limits = levels(LECA_fig$floc), drop = TRUE) +
+  ylab("Percentage of human genes associated with each disease that trace back to LECA") +
+  guides(fill = guide_legend(title = "Subcellular location"))
+  theme(axis.title.y = element_blank()) +
+  coord_flip()
+q3p
+
+# most coverage (>75%)
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+q4 <- LECA_fig %>%
+  filter(num_group_members >= 10, LECA_prop >= 0.75)
+
+q4p <- ggplot(q4, aes(x = fct_rev(fct_reorder(disease_names, locprop, sum)), 
+                                  y = locprop*100, 
+                                  fill = floc)) +
+  geom_col() +
+  #geom_text(aes(label = fraction), stat = "identity") +
+  #theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  scale_fill_manual(name = "loc", values = palette_cb14,
+                    limits = levels(LECA_fig$floc), drop = TRUE) +
+  ylab("Percentage of human genes associated with each disease that trace back to LECA") +
+  guides(fill = guide_legend(title = "Subcellular location")) +
+  theme(axis.title.y = element_blank()) +
+  coord_flip()
+q4p
+
+ggsave("LECA/figures/leca_dis_coverage_topquartile_wcomps_10min.pdf", plot = q4p, device = "pdf", 
+       width = 18, height = 6, units = "in")
+  
+ggsave("LECA/figures/leca_dis_coverage_topquartile_wcomps_10min.png", plot = q4p, device = "png", 
+       width = 18, height = 6, units = "in")
+
+# unannotated
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+ua <- LECA_fig %>%
+  filter(num_group_members >= 10) %>%
+  filter(loc == "Not annotated" & locprop > 0.1)
+
+q4ua <- LECA_fig %>%
+  filter(disease_group %in% ua$disease_group)
+  
+q4uap <- ggplot(q4ua, aes(x = fct_rev(fct_reorder(disease_names, locprop, sum)), 
+                                  y = locprop*100, 
+                                  fill = floc)) +
+  geom_col() +
+  #geom_text(aes(label = fraction), stat = "identity") +
+  #theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  scale_fill_manual(name = "loc", values = palette_cb14,
+                    limits = levels(LECA_fig$floc), drop = TRUE) +
+  ylab("Percentage of human genes associated with each disease that trace back to LECA") +
+  guides(fill = guide_legend(title = "Subcellular location")) +
+  theme(axis.title.y = element_blank()) +
+  coord_flip()
+q4uap
+
+ggsave("LECA/figures/leca_dis_coverage_unannotated_10min.pdf", plot = q4uap, device = "pdf", 
+       width = 18, height = 6, units = "in")
+  
+ggsave("LECA/figures/leca_dis_coverage_unannotated_10min.png", plot = q4uap, device = "png", 
+       width = 18, height = 6, units = "in")
+
+# panel
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+panel <- (q4p + q1p)/(q3p + q2p) +
+  plot_layout(guides = 'collect')
+        
+panel
+
+# plot everything
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::
+qtop <- LECA_fig %>%
+  filter(num_group_members >= 10) %>%
+  arrange(desc(LECA_prop, disease_name)) %>%
+  slice_max(LECA_prop, prop = 0.5)
+
+qbot <- LECA_fig %>%
+  filter(num_group_members >= 10) %>%
+  arrange(desc(LECA_prop, disease_name)) %>%
+  slice_min(LECA_prop, prop = 0.5)
+
+qtp <- ggplot(qtop, aes(x = fct_rev(fct_reorder(disease_names, locprop, sum)),
+                                  y = locprop*100, 
+                                  fill = floc)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust = 1)) +
+  scale_fill_manual(name = "loc", values = palette_cb14,
+                    limits = levels(LECA_fig$floc), drop = TRUE) +
+  ylab("Percentage of human genes/disease that trace back to LECA") +
+  guides(fill = guide_legend(title = "Subcellular location\nof gene(s)")) +
+  theme(legend.position = "top",
+        legend.direction = "horizontal") +
+  theme(axis.title.x = element_blank())
+qtp
+
+qtb <- ggplot(qbot, aes(x = fct_rev(fct_reorder(disease_names, locprop, sum)),
+                                  y = locprop*100, 
+                                  fill = floc)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust = 1)) +
+  scale_fill_manual(name = "loc", values = palette_cb14,
+                    limits = levels(LECA_fig$floc), drop = TRUE) +
+  ylab("Percentage of human genes/disease that trace back to LECA") +
+  guides(fill = guide_legend(title = "Subcellular location\nof gene(s)")) +
+  theme(legend.position = "top",
+        legend.direction = "horizontal") +
+  theme(axis.title.x = element_blank())
+qtb
+
+panel <- (qtp / qtb) +
+  guide_area() +
+  plot_layout(guides = "collect")
+panel
+
+ggsave("LECA/disease_coverage_10min.pdf", plot = panel,
+       device = "pdf", width = 12, height = 18, units = "in")
+
+ggsave("LECA/disease_coverage_10min.png", plot = panel,
+       device = "png", width = 12, height = 18, units = "in")
+```
+
+```{r leca diseases 11162020}
+
+human_proteome_annots <- read_tsv("LECA/annot_files/UP000005640_annotations_11172020.tab") %>%
+  clean_names() %>%
+  mutate(annotation = str_extract(annotation, '(\\d)(?= out of.*)'))
+human_dis_all <- read_csv("LECA/annot_files/human_disease_groups_manuallyedited.csv")
+human_leca_prots <- read_delim("LECA/qfo_tree/human_leca_uniprotIDs.txt", 
+                         delim = "\n", col_names = FALSE) %>% 
+  rename(ProteinID = X1)
+
+leca_proteome_annots <- human_proteome_annots %>%
+  filter(entry %in% human_leca_prots$ProteinID)
+
+leca_poor_annots <- leca_proteome_annots %>%
+  filter(annotation <= 2)
+
+leca_3 <- leca_proteome_annots %>%
+  filter(annotation == 3)
+
+human_dis_all <- human_dis_all %>%
+  mutate(new_group_num = dense_rank(label)) %>%
+  mutate(LECA = case_when(entry %in% human_leca_prots$ProteinID ~ 1, TRUE ~ 0)) %>%
+  group_by(label) %>% 
+  mutate(num_group_members = n())
+
+coverage <- human_dis_all %>%
+  group_by(label) %>%
+  summarize(num_LECA = sum(LECA),
+            prop_LECA = mean(LECA))
+
+# how many genes in LECA? --> 2262
+human_dis_all %>% ungroup() %>%
+  filter(LECA == 1) %>%
+  select(entry) %>%
+  unique()
+
+# how many genes not in LECA? --> 1677
+human_dis_all %>% ungroup() %>%
+  filter(LECA == 0) %>%
+  select(entry) %>%
+  unique()
+
+# scatter plot
+# :::::::::::::::::::::::::::
+LECA_fig <- human_dis_all %>%
+  left_join(coverage)
+
+LECA_fig %>%
+  filter(num_group_members > 2)
+
+# label_subset <- LECA_fig %>%
+#   select(label, num_group_members, num_LECA, prop_LECA) %>%
+#   unique() %>%
+#   filter(prop_LECA > 0.67, num_group_members >= 10) %>% 
+#   arrange(desc(prop_LECA)) %>%
+#   slice_head(n = 15)
+# 
+# label_subset2 <- LECA_fig %>%
+#   select(label, num_group_members, num_LECA, prop_LECA) %>%
+#   unique() %>%
+#   filter(prop_LECA > 0.6, num_group_members >= 30) %>% 
+#   arrange(desc(prop_LECA)) %>%
+#   slice_head(n = 15)
+# 
+# label_subset <- bind_rows(label_subset, label_subset2) %>%
+#   unique()
+
+label_file <- read_delim("LECA/dis_labels.csv", delim = "\n", col_names = FALSE) %>%
+  rename(label = X1)
+
+label_subset <- LECA_fig %>%
+  select(label, num_group_members, num_LECA, prop_LECA) %>%
+  unique() %>%
+  filter(label %in% label_file$label) %>%
+  filter(num_group_members > 5)
+  
+pscatter <- LECA_fig %>%
+  select(label, num_group_members, num_LECA) %>%
+  unique() %>%
+  filter(num_group_members > 5) %>% 
+ggplot(aes(x = num_group_members, y = (num_LECA/num_group_members)*100, 
+           color = (num_LECA/num_group_members)*100, label = label)) +
+  geom_point(alpha = 0.75, size = 5) +
+  theme(panel.grid.major = element_line(colour = palette_pretty[6], 
+                                      size = 0.1, linetype = "dashed"),
+        panel.grid.minor = element_line(colour = palette_pretty[6], 
+                                      size = 0.1, linetype = "dashed")) +
+  coord_fixed() +
+  scale_color_distiller(palette = "YlGnBu", direction = 1) +
+  #theme(legend.position = c(0.1, 0.8)) +
+  theme(legend.position = "none") +
+  geom_text_repel(data = label_subset,
+                size = 9/.pt, # font size
+                fontface = "bold",
+                alpha = 0.90,
+                #hjust = 0.25,
+                point.padding = unit(0.4, "lines"), 
+                box.padding = unit(0.4, "lines"),
+                nudge_y = -0.25,
+                nudge_x = 2, 
+                colour = palette_cb14[14],
+                set.seed(3333)) +
+  xlab("# of human genes/disease (minimum # of genes/disease = 5)") +
+  ylab("% genes in LECA")
+  #ylab("Number of genes originating in LECA") #+
+  #labs(color = "% of genes\nin LECA")
+pscatter
+
+ggsave("LECA/figures/leca_dis_scatter_5min.pdf", plot = pscatter, device = "pdf", 
+       width = 8, height = 6, units = "in")
+  
+ggsave("LECA/figures/leca_dis_scatter_5min.png", plot = pscatter, device = "png", 
+       width = 8, height = 6, units = "in")
+
+```
+
+```{r candidate evaluation 11202020}
+
+human_dis_min <- human_dis_all %>%
+  select(entry, involvement_in_disease, label) %>%
+  unique()
+
+CDK_cands <- read_csv("LECA/disease/dnai2_interactions_CDKcands_humanUPIDs.csv") %>%
+  select(-known_pathology) %>% 
+  #mutate(entry = str_split(as.character(entry), pattern = ', ')) %>%
+  #unnest(entry) %>%
+  filter(!grepl(pattern = ',', x = entry)) %>% 
+  #filter(!grepl(pattern = ',', x = xenla_xen_base_gene_names)) %>% 
+  left_join(human_proteome_annots) %>%
+  left_join(human_dis_min) %>%
+  unique() %>%
+  mutate(LECA = case_when(entry %in% human_leca_prots$ProteinID ~ "LECA or older", TRUE ~ "Younger than LECA")) %>%
+  mutate(label = replace_na(label, "None or unknown")) %>%
+  mutate(label = case_when(str_detect(label, 'Auto') == TRUE ~ 'Immunodeficiency',
+                           str_detect(label, 'Charcot|Parkinson|Spastic|Perry|sclerosis|Neuronopathy') == TRUE ~ 'Neurological disorder',
+                           str_detect(label, 'Tricho|Deafness|Short|hypoplasia|Meier-Gorlin|Leukoencephalopathy|Microcephaly') == TRUE ~ 'Developmental disorder',
+                           str_detect(label, 'Kartagener') == TRUE ~ 'Ciliary dyskinesia',
+                           str_detect(label, 'oxidative|Mito|Pyruvate') == TRUE ~ 'Mitochondrial disease',
+                           str_detect(label, '2-amino|5-oxo') == TRUE ~ 'Amino acid metabolism disorder',
+                           TRUE ~ label)) %>%
+  filter(label != "Atrial fibrillation") %>%
+  filter(!is.na(gene_names_primary))
+
+dp <- ggplot(CDK_cands, aes(x = fct_rev(gene_names_primary), fill = label, label = gene_names_primary)) +
+  geom_bar() +
+  facet_wrap(~LECA) +
+  xlab("Proteins interacting with DNAI2 as measured by APMS (5% FDR)") +
+  ylab("# of disease traits associated with each gene") +
+  coord_flip() +
+  scale_fill_manual(values = c(palette_cb14[1:6], palette_cb14[8:10], palette_cb14[14])) +
+  labs(fill = "Disease category")
+dp
+
+ggsave("LECA/figures/dnai2_interactions_disease.pdf", plot = dp, 
+       device = "pdf", 
+       width = 8, height = 7.25, units = "in")
+  
+ggsave("LECA/figures/dnai2_interactions_disease.png", plot = dp, 
+       device = "png", 
+       width = 8, height = 7.25, units = "in")
+
+CDK_cands_LECA <- CDK_cands %>%
+  filter(LECA == 1)
+
+CDK_cands_no_dis <- CDK_cands %>%
+  filter(is.na(label))
+
+```
+
+#########################################################################################
+# REFSEQ STATS
+#########################################################################################
+
+```{r RefSeq stats}
+
+txt <- readLines("genetrees/refseq_stats/files/archaea.acc_taxid_growth.txt")
+
+data_path <- "genetrees/refseq_stats/files/"
+files <- dir(data_path, pattern = "*_fmt.txt")
+files
+
+taxa <- data.frame(files) %>%
+  mutate(files = as.character(files)) %>% 
+  mutate(taxa = str_extract(files, '(.*?)(?=\\.)'))
+
+taxa
+
+data <- files %>%
+  map(~ read_tsv(file.path(data_path, .)))
+
+data <- tibble(filename = files) %>%
+  mutate(file_contents = map(filename, ~ read_delim(file.path(data_path, .),
+                                                    delim = ' '))) %>%
+  unnest(cols = c(file_contents)) %>%
+  rename(year = Total_accessions, species = Nucleotides) %>%
+  left_join(taxa, by = c("filename" = "files")) %>%
+  select(-filename) %>%
+  group_by(taxa, year) %>%
+  arrange(desc(species)) %>%
+  mutate(rank = row_number()) %>%
+  filter(rank == 1)
+  ungroup
+
+data_filt <- data %>%
+  filter(taxa != 'bacteria') %>%
+  filter(taxa != 'archaea') 
+
+label_subset <- data_filt %>%
+  filter(year == 2020 | year == 2003)
+
+
+
+ggplot(data_filt, aes(x = year, y = species, color = taxa, label = species)) +
+  geom_line() +
+  geom_point() +
+  scale_y_log10() +
+  scale_color_colorblind() +
+  geom_text_repel(
+              data = label_subset,
+              size = 8/.pt, # font size 9 pt
+              fontface = "bold",
+              alpha = 1.0,
+              point.padding = unit(1, "lines"), 
+              box.padding = unit(1, "lines"),
+              segment.size = 0.75,
+              segment.alpha = 0.9,
+              #direction = "y",
+              nudge_y = 0.5,
+              #segment.color = palette_wes_BR2[2],
+              #colour = palette_wes_BR2[2],
+              set.seed(3333)) +
+  xlab("Year") +
+  ylab("Number of species available")
+
+```
+
+#########################################################################################
+# QFO/SWISSPROT REF SET
+#########################################################################################
+
+```{r read in species info}
+
+qof_species <- read_csv("LECA/qfo_tree/speciesinfo.txt", col_names = TRUE) 
+
+# this only contains 78 species, but there are 158 member in the SwissTree
+# need to manually pull the 
+qof_species %>%
+  group_by(tax_group) %>%
+  tally() 
+
+```
+
+```{r prep dollo matrix}
+
+# load in eggnog mapping results for all species; ~2.9 million proteins were mapped
+# had manually edit column headers (using cat inserted "ProteinID\tID" for each mapping file)
+qfo_mapped <- read_delim("LECA/qfo_tree/allspecies_1.mapping", col_names = TRUE, delim = '\t') %>%
+  mutate(species = str_extract(ProteinID, '(?<=_).*')) %>%
+  mutate(ProteinID = str_extract(ProteinID, '(?<=\\|)(.*)(?=\\|)')) %>% 
+  rename(family = ID, uniprotID = ProteinID)
+
+up_codes <- read_table("LECA/qfo_tree/annotations/uniprot_speclist.fmt.txt",
+                       col_names = FALSE) %>%
+  rename(species = X1, taxa = X2, tax_code = X3, species_long = X4) 
+
+up_codes$species <- str_replace(up_codes$species, "HETPA", "POLPA")
+
+species_list <- qfo_mapped %>% 
+  select(species) %>% 
+  unique() %>%
+  left_join(up_codes, by=c("species")) %>%
+  mutate(species_fmt = str_extract(species_long, '(\\w+\\s*){2}'))
+
+species_list %>%
+  select(species_fmt) #%>%
+  #write_delim(., "qfo_tree/annotations/qfo_formal_species_names.txt", 
+              #delim = '\n')
+
+# make count matrix ("contingency table") for enog groups and species
+qfo_counts <- qfo_mapped %>%
+  select(species, family) %>% 
+  #filter(species %in% qof_species$species_code) %>% # I was checking which species are missing in original QfO download (QfO_release_2020_02.tar.gz) vs 156-member species SwissTree (https://swisstree.vital-it.ch/species_tree)
+  group_by(species, family) %>%
+  tally()
+
+total_ENOGs_mapped <- qfo_counts %>%
+  group_by(family) %>%
+  tally()
+
+qfo_table <- qfo_counts %>%
+  pivot_wider(names_from = species, values_from = n) %>%
+  replace(is.na(.), as.numeric("0"))
+
+#write_tsv(qfo_table, "qfo_tree/qfo_count_tables.tsv")
+
+# annotations for each orthogroup, as provided by eggNOG
+qfo_annots <- read_delim("LECA/qfo_tree/annotations/1_annotations.tsv",
+                         delim = "\t",
+                         col_names = FALSE)
+
+qfo_annots_fmt <- qfo_annots %>%
+  mutate(family = case_when(nchar(X2) == 5 ~ paste('ENOG50', X2, sep = ''),
+                        TRUE ~ X2)) %>%
+  select(family, X3, X4)
+  #write_tsv("qfo_tree/annotations/1_annotations_fmt.tsv",
+            #col_names = FALSE)
+```
+
+```{r analyze dollo results}
+
+# dollo parsimony results (have to format header from raw output)
+qfo_dollo <- read_tsv("/project/rmcox/LECA/qfo_tree/count/count_dollo_072820.fmt.tsv")
+
+# pull out genes calculated to be present in LECA; node = 119
+leca_genes <- qfo_dollo %>%
+  filter(`119` > 0) %>%
+  select(Family) %>%
+  left_join(qfo_annots_fmt, by=c("Family" = "family"))
+  
+leca_genes %>%
+  group_by(X3) %>%
+  tally() %>%
+  arrange(desc(n))
+
+cog_categories <- read_csv("LECA/qfo_tree/annotations/cog_categories.csv",
+                           col_names = FALSE)
+
+leca_enrich <- cog_categories %>%
+  left_join(leca_genes, by=c("X1" = "X3")) %>%
+  group_by(X2) %>%
+  tally() %>%
+  rename(all_leca = n)
+
+ggplot(leca_enrich, aes(x = X2, y = all_leca)) +
+  geom_col() +
+  xlab("Functional classification") +
+  ylab("Count") +
+  coord_flip()
+
+# pull out genes calculated to be present in the last common ancestor of plants and viridiplantae; node = ?
+
+# how many of these genes map to the human proteome?
+human_prot_ogs <- read_tsv("LECA/qfo_tree/annotations/human_prot_ogs.tsv")
+
+leca_genes_annot <- left_join(leca_genes, human_prot_ogs, by=c("Family"="ID")) %>%
+  mutate(ProteinID = str_extract(ProteinID,'(?<=\\|)(.*)(?=\\|)')) %>%
+  left_join(leca_proteome_annots, by = c("ProteinID" = "entry"))
+
+human_leca_genes <- inner_join(human_prot_ogs, leca_genes, by=c("ID" = "Family")) %>%
+  mutate(ProteinID = str_extract(ProteinID,'(?<=\\|)(.*)(?=\\|)'))
+
+human_leca_annot <- cog_categories %>%
+  left_join(human_leca_genes, by=c("X1" = "X3")) %>%
+  group_by(ID, X1) %>%
+  summarize_all(funs(paste(unique(.), collapse = ', '))) %>%
+  ungroup()
+
+human_leca_enrich <- human_leca_annot %>% 
+  group_by(X2) %>%
+  tally() %>%
+  rename(human_leca = n)
+
+# are there any categories overrepresented in the human genome compared to LECA? (or vice versa)
+combined_df <- leca_enrich %>%
+  left_join(human_leca_enrich) %>%
+  pivot_longer(-X2, names_to = "gene_set", values_to = "count") %>%
+  group_by(gene_set) %>%
+  mutate(frequency = count/sum(count))
+
+ggplot(combined_df, aes(x = X2, y = frequency, fill = gene_set)) +
+  geom_col(position = "dodge") +
+  xlab("Functional classification") +
+  ylab("Relative frequency") +
+  scale_fill_manual(values = c(palette_OkabeIto[5], palette_OkabeIto[3])) +
+  coord_flip()
+
+
+# what GO bio processes are overrepresented in the LECA set?
+human_leca_genes %>%
+  select(ProteinID) %>%
+  write_delim(., "LECA/qfo_tree/human_leca_uniprotIDs.txt", delim = "\n")
+
+human_LECA_GO_bioproc <- read_tsv("LECA/qfo_tree/go_enrichments/human_LECA_GO_bioproc.txt") %>%
+  clean_names()
+
+human_LECA_GO_molfun <- read_tsv("LECA/qfo_tree/go_enrichments/human_LECA_GO_molfun.txt") %>%
+  clean_names()
+
+# what LECA genes are not in human?
+nonhuman_leca <- anti_join(leca_genes, human_prot_ogs, by=c("Family" = "ID")) %>%
+  left_join(cog_categories, by=c("X3" = "X1"))
+
+nonhuman_leca %>%
+  ggplot(aes(x = X2)) +
+  geom_bar() +
+  coord_flip()
+
+# map root-level LECA orthogroups to LECA-level orthogroups
+e2759 <- read_tsv("/project/rmcox/LECA/ms/og_proteomes/nog_mapping/human.euNOG.diamond.mapping.2759") %>%
+  rename(leca = ID)
+
+e1 <- read_tsv("/project/rmcox/LECA/ms/og_proteomes/nog_mapping/human.euNOG.diamond.mapping.1") %>%
+  rename(root = ID)
+
+e_all <- left_join(e2759, e1)
+
+```
+
+```{r sanity checks}
+
+# sanity checks
+# we have mapped 89,956 ENOG groups
+# there are a total of 295,028 LUCA-level ENOG groups (~30% coverage)
+# what's in the unmapped group?
+
+unmapped <- qfo_annots_fmt %>%
+  filter(family %!in% total_ENOGs_mapped$family) # sampling 10 gives archaea- and bacteria-specific orthogroups
+
+root_members <- read_tsv("qfo_tree/nog_data/1_members.tsv", col_names = FALSE) %>%
+  rename(level = X1, og = X2, prot_count = X3,
+         spec_count = X4, members = X5) %>%
+  select(-X6)
+
+string_species <- read_tsv("qfo_tree/nog_data/species.v11.0.txt")
+
+root_members_unnest <- root_members %>%
+  separate_rows(members)
+
+root_members_annot <- root_members_unnest %>%
+  select(og, members) %>%
+  mutate(members_prot_code = str_extract(members, '(\\d+)(?=\\D|$)')) %>%
+  mutate(members_prot_code = as.numeric(members_prot_code)) %>% 
+  left_join(up_codes, by=c("members_prot_code" = "tax_code"))
+
+```
+
+```{r dollo vs wagner parsimony}
+
+# dollo/wagner parsimony results from Count (have to format header from raw output)
+qfo_dollo <- read_tsv("qfo_tree/count/count_dollo_072820.fmt.tsv")
+qfo_wagner <- read_tsv("qfo_tree/count/count_wagner_072820.fmt.tsv")
+
+# last universal common ancestor
+LUCA.d <- qfo_dollo %>%
+  filter(`131` > 0) %>%
+  select(Family) %>%
+  left_join(qfo_annots_fmt, by=c("Family" = "family"))
+
+LUCA.w <- qfo_wagner %>%
+  filter(`131` > 0) %>%
+  select(Family) %>%
+  left_join(qfo_annots_fmt, by=c("Family" = "family"))
+
+
+# last archael and eukaryotic common ancestor
+LAECA.d <- qfo_dollo %>%
+  filter(`124` > 0) %>%
+  select(Family) %>%
+  left_join(qfo_annots_fmt, by=c("Family" = "family"))
+
+LAECA.w <- qfo_wagner %>%
+  filter(`124` > 0) %>%
+  select(Family) %>%
+  left_join(qfo_annots_fmt, by=c("Family" = "family"))
+
+# last eukaryotic common ancestor
+LECA.d <- qfo_dollo %>%
+  filter(`119` > 0) %>%
+  select(Family) %>%
+  left_join(qfo_annots_fmt, by=c("Family" = "family"))
+
+LECA.w <- qfo_wagner %>%
+  filter(`119` > 0) %>%
+  select(Family) %>%
+  left_join(qfo_annots_fmt, by=c("Family" = "family"))
+
+# last opisthokonta and viridiplantae common ancestor
+LOVCA.d <- qfo_dollo %>%
+  filter(`112` > 0) %>%
+  select(Family) %>%
+  left_join(qfo_annots_fmt, by=c("Family" = "family"))
+
+LOVCA.w <- qfo_wagner %>%
+  filter(`112` > 0) %>%
+  select(Family) %>%
+  left_join(qfo_annots_fmt, by=c("Family" = "family"))
+
+```
+
+#########################################################################################
+# Enrichment
+#########################################################################################
+
+```{r read in uniprot data}
+
+human_leca_up <- read_delim("LECA/qfo_tree/human_leca_uniprotIDs.txt", 
+                         delim = "\n", col_names = FALSE)
+
+```
+
+```{r gprofiler analysis}
+
+# gprofiler 
+library(gprofiler2)
+
+human_leca <- unlist(human_leca_uniprot)
+
+# all databases
+gostres_all <- gost(query = human_leca, organism = "hsapiens")
+head(gostres_all$result)
+
+p_all <- gostplot(gostres_all, capped = FALSE, interactive = TRUE)
+p_all
+
+gostres_all_df <- gostres_all$result
+
+# human phenotype ontology
+gostres_hp <- gost(query = human_leca, organism = "hsapiens", sources = "HP")
+head(gostres_hp$result)
+
+p_hp <- gostplot(gostres_hp, capped = FALSE, interactive = TRUE)
+p_hp
+
+gostres_hp_df <- gostres_hp$result
+
+```
+
+#########################################################################################
+# CO-FRACTIONATION DATA
+#########################################################################################
+
+```{r read in summary data}
+
+exp_summary <- read_csv("/project/rmcox/LECA/ms/cfms/meta/leca_experiments.csv") %>%
+  clean_names() %>%
+  mutate(code = tolower(code))
+
+run_summary <- read_delim("/project/rmcox/LECA/ms/cfms/meta/all_reruns.info.txt", delim = " ", col_names = FALSE) %>%
+  rename(fractionation_id = X1, db_info = X2,
+         fractionation_info = X3, run_info = X4,
+         run_status = X5) %>%
+  separate(fractionation_info, into = c("code", "ms_blender_directory"),
+           sep = "/")
+
+all_stats <- run_summary %>%
+  left_join(exp_summary, by = c("ms_blender_directory", "code"))
+
+# summary of all results
+runstat <- run_summary %>%
+  group_by(run_status) %>%
+  tally()
+
+# plot of all results by species
+ggplot(all_stats, aes(x = species_simplified, fill = run_status)) +
+  geom_bar() +
+  scale_fill_manual(values = palette_pretty) +
+  ylab("# fractions") +
+  xlab("species") +
+  coord_flip()
+
+# manually make a table of results to plot to reorder by fraction #
+runstat_by_species <- all_stats %>%
+  #mutate(species_simplified = fct_reorder(species_simplified, run_status, .fun = 'length'))
+  mutate(species_simplified = str_replace(species_simplified,
+                                          "Ca. Methanoperedens nitroreducens",
+                                          "M. nitroreducens")) %>%
+  mutate(run_status = case_when(run_status == "good_2" ~ "Prots detected by\n2 MS/MS parsers",
+                                run_status == "good_3" ~ "Prots detected by\n3 MS/MS parsers",
+                                run_status == "no_prots" ~ "Prots detected by\n0 MS/MS parsers",
+                                run_status == "no_spectra" ~ "No viable spectra\ndetected",
+                                run_status == "parse_xml" ~
+                                  "File read error")) %>% 
+  group_by(run_status, species_simplified, map) %>%
+  tally() %>%
+  left_join(labels) %>% 
+  ungroup() %>% 
+  arrange(desc(total_fracs)) %>%
+  mutate(species_simplified = fct_reorder(species_simplified,
+                                          total_fracs))
+
+labels <- runstat_by_species %>%
+  group_by(species_simplified) %>%
+  summarize(total_fracs = sum(n)) %>%
+  arrange(desc(total_fracs))
+
+cfms_stat_plot <- ggplot(runstat_by_species, aes(x = species_simplified, 
+                               y = n)) +
+  geom_col(position = "fill", aes(fill = run_status)) +
+  scale_fill_manual(values = rev(palette_pretty[1:5]),
+                    guide = guide_legend(reverse = TRUE)) +
+  ylab("% eluted fractions") +
+  xlab("") +
+  coord_flip()
+cfms_stat_plot
+
+ggsave("LECA/figures/cfms_runstat_plot.png", cfms_stat_plot,
+         device = "png", width = 8, height = 6, units = "in")
+ggsave("LECA/figures/cfms_runstat_plot.pdf", cfms_stat_plot, 
+         device = "pdf", width = 8, height = 6, units = "in")
+
+
+# investigate .group files missing from output dirs
+missing_fracs <- read_delim("/project/rmcox/LECA/ms/cfms/elut_files/problem_fraction_names.txt",
+                            delim = "\n", col_names = FALSE)
+
+missing_fracs_summary <- all_stats %>%
+  filter(fractionation_id %in% missing_fracs$X1) %>%
+  group_by(code, ms_blender_directory, run_status) %>%
+  filter(run_status != "no_prots")
+  tally()
+  
+good_fracs <- read_delim("/project/rmcox/LECA/ms/cfms/elut_files/good_fraction_names.txt", delim = "\n", col_names = FALSE)
+
+missing_fracs2 <- all_stats %>%
+  filter(fractionation_id %!in% good_fracs$X1 & fractionation_id %!in% missing_fracs$X1) %>% 
+  filter(run_status == "good_2" | run_status == "good_3")
+
+missing_fracs2 %>%
+  select(fractionation_id) %>%
+  write_delim("/project/rmcox/LECA/ms/missing_msb_output.txt",
+              col_names = FALSE,
+              delim = "\n")
+
+```
+
+```{r nog annotation files}
+
+human_nogs <- read_tsv("/project/rmcox/LECA/ms/og_proteomes/nog_mapping/human.euNOG.diamond.mapping.2759") %>%
+  mutate(human_entry = str_extract(ProteinID,'(?<=\\|)(.*)(?=\\|)')) %>%
+  select(-ProteinID)
+human_refs <- read_tsv("/project/rmcox/LECA/ms/cfms/annotations/uniprot_annots_human.tsv") %>%
+  clean_names()
+colnames(human_refs) <- paste("human", colnames(human_refs), sep = "_")
+human_all <- left_join(human_nogs, human_refs)
+
+arath_nogs <- read_tsv("/project/rmcox/LECA/ms/og_proteomes/nog_mapping/arath.euNOG.diamond.mapping.2759") %>%
+  mutate(arath_entry = str_extract(ProteinID,'(?<=\\|)(.*)(?=\\|)')) %>%
+  select(-ProteinID)
+arath_refs <- read_tsv("/project/rmcox/LECA/ms/cfms/annotations/uniprot_annots_arath.tsv") %>%
+  clean_names()
+colnames(arath_refs) <- paste("arath", colnames(arath_refs), sep = "_")
+arath_all <- left_join(arath_nogs, arath_refs)
+  
+eunog_refs <- full_join(human_all, arath_all) %>%
+  group_by(ID) %>%
+  summarize_all(funs(paste(unique(.), collapse = ', ')))
+
+eunog_refs %>% filter(human_entry == "NA")  # 5930 human orthogroups not in arath
+eunog_refs %>% filter(arath_entry == "NA")  # 6560 arath orthogroups not in human
+
+overlap <- eunog_refs %>% 
+  filter(arath_entry != "NA" & human_entry != "NA") # 3243 overlap
+
+eunog_refs %>%
+  select(ID, human_gene_names_primary) %>%
+  write_tsv("/project/rmcox/LECA/ms/cfms/annotations/eunog_refs.human_genes.tsv")
+
+eunog_genes <- eunog_refs %>%
+  select(ID, human_gene_names_primary,
+         arath_gene_names_primary) %>%
+  group_by(ID) %>%
+  summarize_all(funs(paste(unique(.), collapse = ', ')))
+  
+
+```
+
+```{r conserved complexes}
+
+corum_compl <- read_tsv("LECA/ms/cfms/annotations/corum_coreComplexes.txt") %>%
+  clean_names() %>%
+  filter(organism == "Mammalia")
+
+```
+
+```{r map rootNOGs to euNOGs}
+
+nog_path = "/project/rmcox/LECA/ms/og_proteomes/nog_mapping/"
+eunog_files <- dir(nog_path, pattern = "*mapping.2759")
+eunog_files
+
+rootnog_files <- dir(nog_path, pattern = "*mapping.1")
+rootnog_files
+
+eunog_maps <- eunog_files %>%
+  map(~ read_tsv(file.path(nog_path, .))) %>%
+  reduce(rbind) %>%
+  rename(euNOG = ID)  # 824,050 euNOGS
+
+rootnog_maps <- rootnog_files %>%
+  map(~ read_tsv(file.path(nog_path, .))) %>%
+  reduce(rbind) %>%
+  rename(rootNOG = ID)  # 848,880 rootNOGs
+
+root2euk_all <- left_join(rootnog_maps, eunog_maps) # 883,229 mappings
+write_csv(root2euk_all, file = "/project/rmcox/LECA/ms/cfms/annotations/root2euk_allspecies.csv")
+
+root2euk_all %>% filter(rootNOG == euNOG) # 232,211 proteins have the same assigned orthogroup at the root or LECA level
+
+root2euk_map <- root2euk_all %>%
+  select(rootNOG, euNOG) %>%
+  unique() %>% # 64,692 unique mappings
+  left_join(eunog_refs, by=c("euNOG" = "ID"))
+
+root2euk_map %>% filter(rootNOG == euNOG) # 2,544 unique "mappings" are the same orthogroup
+
+# how much did the rootNOGs expand?
+root_expansions <- root2euk_map %>%
+  group_by(rootNOG) %>%
+  tally() %>%
+  arrange(desc(n)) %>%
+  rename(num_eunog_per_root = n)
+
+# wow really not that much, according to this plot
+root_expansions %>%
+  ggplot(aes(x = num_eunog_per_root)) +
+  geom_histogram() +
+  scale_y_log10()
+
+min(root_expansions$num_eunog_per_root)
+median(root_expansions$num_eunog_per_root) # 1
+mean(root_expansions$num_eunog_per_root) # 1.43
+
+write_csv(root2euk_map, file = "/project/rmcox/LECA/ms/cfms/annotations/root2euk_collapsed_annotated.csv")
+
+```
+
+```{leca filter}
+
+# dollo parsimony results (have to format header from raw output)
+qfo_dollo <- read_tsv("/project/rmcox/LECA/qfo_tree/count/count_dollo_072820.fmt.tsv")
+
+# pull out genes calculated to be present in LECA; node = 119
+leca_rootnogs <- qfo_dollo %>%
+  filter(`119` > 0)
+
+leca_eunogs <- root2euk_map %>%
+  filter(rootNOG %in% leca_rootnogs$Family | euNOG %in% leca_rootnogs$Family)
+
+write_csv(leca_eunogs, "/project/rmcox/LECA/ms/cfms/annotations/root2euk_leca.csv")
+
+```
+
+```{r elution profiles}
+
+# function for reading in data
+read_elut <- function(elut_file){
+  
+  elut_df <- read_delim(elut_file, delim = "\t")
+  
+  return(elut_df)
+}
+
+# function for normalizing PSMs
+norm01 <- function(x){(x-min(x))/(max(x)-min(x))}
+
+# function for clustering data
+hclust_elut <- function(concat_elut_file, outfile){
+  
+  norm01 <- function(x){(x-min(x))/(max(x)-min(x))}
+  
+  elut_concat <- read_tsv(concat_elut_file)
+  
+  # normalization
+  norm <- elut_concat %>%
+    select(-X1, -total_PSMs) %>%
+    norm01()
+  
+  elut_norm <- data.frame(norm, 
+                          orthogroup = elut_concat$X1) %>%
+    tibble::column_to_rownames(var="orthogroup")
+  
+  # cluster
+  elut_cluster <- elut_norm %>%
+    cor() %>%
+    cluster_matrix(dim = "col")
+  
+  write.table(elut_cluster, outfile)
+  return(elut_cluster)
+  
+}
+
+# locate all data
+elut_path = "/project/rmcox/LECA/ms/cfms/elut_files"
+elut_files <- dir(elut_path, pattern = "*unique.elut",
+                  full.names = TRUE)
+
+# subset for eukaryotes
+subset_files <- str_subset(elut_files, "halsa|camnx|pseae|ecoli|staa8", 
+           negate = TRUE)
+
+# # subset for testing
+# subset_files <- sample(subset_files, 70,
+#                        replace = FALSE)
+# subset_files
+
+results <- mapply(read_elut, 
+                  elut_file = subset_files)
+results[1] <- NULL
+
+# takes a long time
+elut_concat <- results %>%
+  reduce(full_join, by = 'X1')
+elut_concat[is.na(elut_concat)] <- 0
+
+elut_concat_filt <- elut_concat %>%
+  mutate(total_PSMs = rowSums(select_if(., is.numeric))) %>%
+  select(X1, total_PSMs, everything()) %>% 
+  arrange(desc(total_PSMs)) %>%
+  filter(total_PSMs >= 10)
+
+# these take a long time to write
+write_tsv(elut_concat, "/project/rmcox/LECA/ms/cfms/results/leca_10exp_test_elut.raw.txt")
+
+write_tsv(elut_concat_filt, "/project/rmcox/LECA/ms/cfms/results/leca_15exp_test_elut.filt20p.raw.txt")
+
+# normalization
+norm <- elut_concat_filt %>%
+  select(-X1, -total_PSMs) %>%
+  norm01()
+
+elut_norm <- data.frame(norm,orthogroup = elut_concat_filt$X1) %>%
+  tibble::column_to_rownames(var="orthogroup")
+
+# clustering w/ textshape
+library(textshape)
+library(viridis)
+
+hclust_elut("/project/rmcox/LECA/ms/cfms/results/leca_euk_elut.filt10p.raw.txt", 
+	"/project/rmcox/LECA/ms/cfms/results/leca_euk_elut.filt10p.hclust.txt")
+
+test_clust <- hclust_elut("/project/rmcox/LECA/ms/cfms/results/leca_15exp_test_elut.filt20p.raw.txt", 
+	"/project/rmcox/LECA/ms/cfms/results/leca_15exp_test_elut.filt20p.hclust.txt")
+
+euk_clust <- read.table("/project/rmcox/LECA/ms/cfms/results/leca_15exp_test_elut.filt20p.hclust.txt")
+euk_clust <- as.matrix(euk_clust)
+
+test_input <- read_tsv("/project/rmcox/LECA/ms/cfms/results/leca_15exp_test_elut.filt20p.raw.txt")
+test_clust <- cluster_matrix(test_input, dim = "col")
+test_output <- read.table("/project/rmcox/LECA/ms/cfms/results/leca_15exp_test_elut.filt20p.hclust.txt")
+test_matrix <- as.matrix(test_output)
+
+hcp <- test_matrix %>% 
+  tidy_matrix('orthogroup', 'var') %>%
+    mutate(
+        var = factor(var, levels = unique(var)),
+        orthogroup = factor(orthogroup, 
+                            levels = unique(orthogroup))        
+    ) %>%
+    group_by(var) %>%
+    ggplot(aes(var, orthogroup, fill = value)) +
+         geom_tile() +
+         scale_fill_gradient2(low = "white",
+                              high = "black",
+                              trans = "log2") +
+         #scale_fill_viridis(name = "normalized",
+                            #direction = -1,
+                            #start = 0.2) +
+         theme(
+             axis.text.y = element_blank(),
+             axis.text.x = element_blank(),
+             axis.title.y=element_blank(),
+             axis.title.x=element_blank(),
+             legend.position = 'bottom',
+             legend.key.height = grid::unit(.1, 'cm'),
+             legend.key.width = grid::unit(.5, 'cm')               
+         )
+hcp
+
+# hcp <- test_matrix %>% 
+#   tidy_matrix('orthogroup', 'var') %>%
+#     mutate(
+#         var = factor(var, levels = unique(var)),
+#         orthogroup = factor(orthogroup, 
+#                             levels = unique(orthogroup))        
+#     ) %>%
+#     group_by(var) %>%
+#     ggplot(aes(var, orthogroup, fill = value)) +
+#          geom_tile() +
+#          scale_fill_viridis(name = expression(r[xy])) +
+#          theme(
+#              axis.text.y = element_blank(),
+#              axis.text.x = element_blank(),
+#              axis.title.y=element_blank(),
+#              axis.title.x=element_blank(),
+#              legend.position = 'bottom',
+#              legend.key.height = grid::unit(.1, 'cm'),
+#              legend.key.width = grid::unit(.5, 'cm')               
+#          )
+# hcp
+
+ggsave("LECA/figures/euk_clust_all_10p.png", hcp,
+         device = "png", width = 8, height = 6, units = "in")
+ggsave("LECA/figures/euk_clust_all_10p.pdf", hcp, 
+         device = "pdf", width = 8, height = 6, units = "in")
+
+# annotations
+elut_concat_annot <- elut_concat %>%
+  left_join(eunog_genes, by=c("X1"="ID")) %>%
+  select(X1, human_gene_names_primary, 
+         arath_gene_names_primary, everything())
+
+# filter for leca
+cfms_all <- read_tsv("/project/rmcox/LECA/ms/cfms/results/leca_euk_elut.raw.txt")
+
+cfms_all %>% 
+  select(X1) %>% 
+  filter(!grepl('KOG|COG|ENOG', X1))  # 133,928 have species-specific protein identifiers
+
+cfms_all <- cfms_all %>%
+  mutate(set = "all genes") %>%
+  mutate(total_PSMs = rowSums(select_if(., is.numeric)))
+
+cfms_leca_nogs <- cfms_all %>%
+  filter(X1 %in% leca_eunogs$euNOG | X1 %in% leca_eunogs$rootNOG) %>%
+  mutate(set = "leca genes") %>%
+  select(X1, total_PSMs, set)
+  # group_by(set, total_PSMs) %>%
+  # summarize(n = n()) %>% 
+  # mutate(freq = n/sum(n))
+
+cfms_distr <- cfms_all %>%
+  select(X1, total_PSMs, set) %>%
+  bind_rows(cfms_leca_nogs)
+
+write_tsv(cfms_distr, "/project/rmcox/LECA/ms/cfms/results/leca_vs_all_count_distribution.txt")
+
+# bw <- 2 * IQR(cfms_distr$total_PSMs) / length(cfms_distr$total_PSMs)^(1/3)
+
+ggplot(cfms_distr, aes(x = total_PSMs, color = set)) +
+  geom_freqpoly(bins = 400) +
+  scale_y_log10() +
+  scale_x_log10() +
+  #geom_vline(xintercept=150, linetype="dotted") +
+  scale_color_manual(values = c("#E69F00","#0072B2"))
+
+ggplot(cfms_distr, aes(x = total_PSMs, group = set, fill = set)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = c("#E69F00","#0072B2")) +
+  #scale_y_log10() +
+  scale_x_log10()
+
+cfms_distr %>%
+  filter(total_PSMs <= 200) %>% 
+    ggplot(aes(x = total_PSMs, group = set, fill = set)) +
+      geom_histogram(bins = 20, alpha = 0.75,
+                     aes(y=(..count..)/sum(..count..)*100,
+                         group = set),
+                     position = "dodge") +
+      #geom_histogram(aes(y = ..density..), bins = 100, alpha = 0.75) +
+      scale_fill_manual(values = c("#E69F00","#0072B2")) +
+      #scale_y_log10() +
+      scale_x_log10()
+
+cfms_distr %>% 
+  ggplot(aes(x = total_PSMs, y = freq, fill = set)) +
+  geom_col()
+
+options(scipen=10000)
+samp_dep <- cfms_distr %>% 
+      ggplot(aes(x = total_PSMs, color = set)) +
+      stat_ecdf(geom = "step", size = 2) +
+      scale_x_log10() +
+      scale_color_manual(values = c("#E69F00","#0072B2")) +
+      ylab("Proportion") +
+      xlab("Total PSMs per protein or OG")
+
+ggsave("LECA/figures/leca_cfms_psm_distr.png", samp_dep,
+         device = "png", width = 6, height = 4, units = "in")
+ggsave("LECA/figures/leca_cfms_psm_distr", samp_dep, 
+         device = "pdf", width = 6, height = 4, units = "in")
+
+
+cfms_leca_nogs %>% select(-set) %>%
+write_tsv("/project/rmcox/LECA/ms/cfms/results/leca_euk_elut.dollonogs.raw.txt")
+```
+
+#########################################################################################
+# AFFINITY PURIFICATION DATA
+#########################################################################################
+
+```{r load tables}
+
+flybase_data <- read_tsv("/project/rmcox/LECA/ms/apms/physical_interactions_mitab_fb_2021_02.tsv")
+
+ben_ancient_ppi <- read_csv("/project/rmcox/LECA/ms/apms/ben_dataset4_07302018.missing_annotated.csv")
+
+```
+
+#########################################################################################
+# CODE ARCHIVE
+#########################################################################################
+
+```{r clustering}
+ # clustering w/ cluster library
+library(tidyverse)
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering visualization
+library(dendextend) # for comparing two dendrograms
+
+# optimal number of clusters
+fviz_nbclust(elut_norm, FUN = hcut, method = "wss")
+fviz_nbclust(elut_norm, FUN = hcut, method = "silhouette")
+
+# Compute with agnes
+d <- dist(elut_norm, method = "euclidean")
+hc1 <- agnes(elut_norm, method = "average")
+plot(hc1, cex = 0.6, hang = -1)
+
+# methods to assess
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+
+# function to compute coefficient
+ac <- function(x) {
+  agnes(elut_norm, method = x)$ac
+}
+
+# closer coefficient is to 1 = best cluster structure
+map_dbl(m, ac)
+```
+
+```{r dollo troubleshooting}
+
+# ascertain missing species from first pass dollo parsimony
+missing <- qfo_dollo %>% select(-Family) %>% select_if(colSums(.) == 0) %>%
+  names()
+
+fwrite(list(missing), "qfo_tree/reference_proteomes/Added_Species/missinglist.txt")
+
+missing <- read_delim("qfo_tree/Added_Species/missinglist.txt",
+                      delim = "\n",
+                      col_names = FALSE)
+
+spec2taxid <- read_delim("qfo_tree/reference_proteomes/Added_Species/spec2taxid_mapping.txt",
+                         delim = " ",
+                         col_names = FALSE)
+
+mapped <- left_join(missing, spec2taxid) %>%
+  column_to_rownames(var = "X1")
+
+# the following taxa are not labeled correctly in SwissTree 
+mapped["SPETR", "X2"] <- 43179
+mapped["CANFA", "X2"] <- 9615
+mapped["SULSO", "X2"] <- 273057
+
+mapped <- rownames_to_column(mapped)
+
+# write tax ids to file to be retrieved from uniprot
+mapped %>%
+  select(X2) %>% 
+  write_delim("qfo_tree/reference_proteomes/Added_Species/taxid_list.txt",
+              delim = "\n",
+              col_names = FALSE)
+
+```
+
+```{r mitochondrial disease analysis}
+
+LECA_mitochondria %>%
+  select(involvement_in_disease) %>% 
+  write_delim("mito_diseases.txt", delim = "\n",
+            col_names = FALSE)
+
+source('http://www.sthda.com/upload/rquery_wordcloud.r')
+
+rquery.wordcloud("mito_diseases.txt", 
+                 type="file", 
+        lang="english", excludeWords = "disease", 
+        textStemming = FALSE,  colorPalette="Dark2",
+        max.words=500)
+
+```
+
+#########################################################################################
+# UNIPROT PROTEOMES - SPECIES TREE
+#########################################################################################
+
+```{r}
+library(knitr)
+
+knitr::opts_chunk$set(engine.path = list(
+  bash = '/bin/bash'
+))
+```
+
+
+```{bash}
+echo $PATH
+```
+
+```{r format files for species tree}
+
+uniprot_orthomapped <- read_delim('notung/uniprot_mapped.txt',
+                                  delim = '\n', col_names = FALSE) %>%
+  rename(proteome_id = X1)
+
+uniprot_euk_info <- read_tsv('notung/uniprot_proteome_speciesinfo_euks.tsv') %>%
+  clean_names()
+
+euks_orthomapped_hq <- uniprot_orthomapped %>%
+  left_join(uniprot_euk_info) %>%
+  select(-busco) %>%
+  filter(cpd != "Outlier")
+
+#euks_orthomapped_hq %>% select(organism_id) %>%
+#  write_delim('notung/uniprot_species_mapped_IDs_euks.txt', delim = '\n')
+
+uniprot_bact_info <- read_tsv('notung/uniprot_proteome_speciesinfo_bact.tsv') %>%
+  clean_names() %>%
+  mutate(filename = paste(proteome_id, organism_id, sep = '_')) %>%
+  mutate(filename = paste(filename, 'fasta.gz', sep = '.'))
+
+uniprot_bact_info %>% 
+  select(filename) %>%
+  write_delim('notung/uniprot_proteome_list_bact.txt', delim = '\n')
+
+uniprot_arch_info <- read_tsv('notung/uniprot_proteome_speciesinfo_arch.tsv') %>%
+  clean_names() %>%
+  mutate(filename = paste(proteome_id, organism_id, sep = '_')) %>%
+  mutate(filename = paste(filename, 'fasta.gz', sep = '.'))
+
+uniprot_arch_info %>% 
+  select(filename) %>%
+  write_delim('notung/uniprot_proteome_list_arch.txt', delim = '\n')
+```
