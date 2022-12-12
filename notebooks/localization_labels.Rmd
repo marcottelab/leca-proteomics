@@ -69,6 +69,24 @@ write_csv(summarized, "leca/localization_ml/results/summarized_all-quickgo_count
           )
 ```
 
+```{r}
+cellproj_list <- all_data %>%
+  filter(go_name == "cell projection")
+
+# cellproj_allgenes <- all_data %>%
+#   filter(gene_product_id %in% ac_list$gene_product_id)
+
+gene_list <- all_data %>%
+  filter(go_name == "cell projection")
+
+all_genes <- all_data %>%
+  filter(gene_product_id %in% gene_list$gene_product_id)
+
+cellproj_sum <- all_genes %>%
+  group_by(go_name) %>%
+  tally()
+```
+
 Visualize the top hits from the raw data (by species):
 ```{r}
 pdata <- summarized %>%
@@ -124,16 +142,19 @@ ggplot(pdata, aes(x = go_name, y = count, fill = Taxon)) +
 ```{r}
 label_list <- c("cell projection", "cytoskeleton", "cytosol", "cytoplasmic vesicle", "vacuole", "Golgi apparatus", "endoplasmic reticulum", "ribosome", "nucleus", "mitochondrion", "plasma membrane", "extracellular region")
 
-pruned_labels <- all_data %>%
+pruned_labels_1 <- all_data %>%
   filter(go_name %in% label_list)
-
-
 
 # how many genes with labels did we retain?
 uniq_genes <- unique(pull(all_data, gene_product_id)) # 42,835
 uniq_genes_pruned <- unique(pull(pruned_labels, gene_product_id)) # 34,258
 perc_retained_pruned <- (length(uniq_genes_pruned)/
                     length(uniq_genes))*100 # ~80%
+
+# how many vacuole IDs?
+pruned_labels_1 %>%
+  filter(go_name == "vacuole") %>%
+  tally()  # 671
 ```
 
 Figure out which genes do not have labels in pruned list:
@@ -205,10 +226,54 @@ joined %>%
 # which localizations are the most highly weighted?
 ```
 
-```{r}
+# Reworking the label list (11/15/2022)
 
+Last round of labels:
+
+- GO:0042995   cell projection
+- GO:0005856   cytoskeleton
+- GO:0005829   cytosol
+- GO:0031410   cytoplasmic vesicle
+- GO:0005773   vacuole*
+- GO:0005794   Golgi apparatus
+- GO:0005783   endoplasmic reticulum
+- GO:0005840   ribosome
+- GO:0005634   nucleus
+- GO:0005739   mitochondrion
+- GO:0005886   plasma membrane
+- GO:0005576   extracellular region
+
+*Not many vacuole labels in humans; also about half of the vacuoles in yeast & Arabidopsis are specifically labeled "fungal-type vacuole" or "plant-type vacuole." These labels are NOT child terms of vacuole, so these labels are lost with the final set listed above.*
+
+Changes to make:
+
+- Group lysosome & vacuole GO terms together
+- Change cell projection → cilium
+- Change extracellular region → cell surface
+- Lysosome
+- Peroxisome
+
+
+```{r}
+label_list <- c("cell surface", "cilium", "cytoskeleton", "cytosol", "cytoplasmic vesicle", "vacuole", "Golgi apparatus", "endoplasmic reticulum", "ribosome", "nucleus", "mitochondrion", "plasma membrane", "lysosome")
+
+pruned_labels_2 <- all_data %>%
+  mutate(go_name = case_when(grepl("vacuole", go_name) ~ "vacuole",
+                                   TRUE ~ go_name)) %>% 
+  filter(go_name %in% label_list)
+
+
+# how many vacuole IDs?
+pruned_labels_2 %>%
+  filter(go_name == "vacuole") %>%
+  tally()  # 2002
 ```
 
 ```{r}
-
+# how many genes with labels did we retain?
+uniq_genes <- unique(pull(all_data, gene_product_id)) # 42,835
+uniq_genes_pruned <- unique(pull(pruned_labels, gene_product_id)) # 34,473
+perc_retained_pruned <- (length(uniq_genes_pruned)/
+                    length(uniq_genes))*100 # ~80.5%
+perc_retained_pruned
 ```
