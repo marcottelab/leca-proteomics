@@ -2,7 +2,7 @@
 # THIS SCRIPT WAS DEVELOPED AND TESTED BY:
 # Rachael M. Cox
 # rachaelcox@utexas.edu
-# Last updated: 4/25/2022
+# Last updated: 01/11/2023
 #################################################
 library(argparse)
 library(tidyverse)
@@ -45,6 +45,10 @@ species_labels <- read_csv("/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/s
   mutate(species_short = str_remove(species_simplified, " \\(.*")) %>%
   unique()
 
+# ordered codes based on phylogeny
+species_order <- read_delim('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/meta/euk_codes_ordered_phylo.txt', delim='\n', col_names=FALSE) %>% pull(X1)
+clade_order <- c('Amorphea','Excavate','TSAR','Archaeplastida')
+
 # -----------------------------------------------------
 #################### functions ####################
 # -----------------------------------------------------
@@ -56,13 +60,17 @@ get_cmplx <- function(cmplx_file, sep = ',',
   cmplx <- read_delim(cmplx_file, delim = sep)
   
   cmplx_name <- cmplx %>%
-    pull(cmplx_name) %>%
+    pull(granulated_cmplx_name) %>%
+    unique()
+  
+  cmplx_ids <- cmplx %>%
+    pull(ID) %>%
     unique()
   
   message("Pulling sparklines for: ", cmplx_name)
   
   cmplx_annots <- annots %>%  # get annotations
-    filter(grepl(paste(cmplx$ID, collapse = "|"), ID, ignore.case = TRUE))
+    filter(ID %in% cmplx_ids)
   
   message("IDs corresponding to this complex: \n", paste(cmplx_annots$ID, "\n"))
   
@@ -75,7 +83,7 @@ get_cmplx <- function(cmplx_file, sep = ',',
     
     message("Extracting best-sampled experiment ...")
     cmplx_rd <- cfms_rd %>%  # get complex from *ALL RAW* data
-      filter(grepl(paste(cmplx_annots$ID, collapse = "|"), orthogroup, ignore.case = TRUE)) # (takes awhile)
+      filter(orthogroup %in% cmplx_ids) # (takes awhile)
     
     # extract best sampled experiment for each species
     cmplx_rd_ranked <- cmplx_rd %>%
@@ -86,7 +94,7 @@ get_cmplx <- function(cmplx_file, sep = ',',
       
     # extract from normalized data
     cmplx_eluts <- cfms_nd %>%  # get complex from *ALL NORMALIZED* data
-      filter(grepl(paste(cmplx_annots$ID, collapse = "|"), orthogroup, ignore.case = TRUE)) %>% # (takes awhile)
+      filter(orthogroup %in% cmplx_ids) %>%  # (takes awhile)
       mutate(filter_col = paste(species, experiment, sep = " ")) %>%
       filter(filter_col %in% cmplx_rd_ranked$filter_col) %>%
       mutate(line_size = 1.25)
@@ -94,7 +102,7 @@ get_cmplx <- function(cmplx_file, sep = ',',
   } else {
     
     cmplx_eluts <- cfms_nd %>%  # get complex from *ALL NORMALIZED* data
-      filter(grepl(paste(cmplx_annots$ID, collapse = "|"), orthogroup, ignore.case = TRUE)) %>%
+      filter(orthogroup %in% cmplx_ids) %>%  # (takes awhile)
       mutate(line_size = 1)
     
   }
@@ -103,10 +111,10 @@ get_cmplx <- function(cmplx_file, sep = ',',
     
     message("Extracting subset of species from each clade ...")
     
-    species_subset <- c("human", "dicdi", "brart", "strpu",  # amorphea
+    species_subset <- c("dicdi", "nemve", "brart", "human",  # amorphea
                         "euggr", "tryb2",  # excavate
-                        "plakh", "phatc", "tetts",  # TSAR
-                        "arath", "chlre", "selml", "maize")  # viridiplantae
+                        "phatc", "tetts", "plakh",  # TSAR
+                        "chlre", "selml", "maize", "arath")  # archaeplastida
     
     cmplx_eluts <- cmplx_eluts %>%
       filter(species %in% species_subset) %>%  ## NOTE::FOR SPECIES SUBSETTING
@@ -124,15 +132,16 @@ fmt_df <- function(df){
   message("Formatting complex data frame ...")
   
   cmplx_ids <- df %>%
-    select(orthogroup) %>%
+    pull(orthogroup) %>%
     unique()
   
   cmplx_annots <- annots %>%  # get annotations
-    filter(grepl(paste(cmplx_ids$orthogroup, collapse = "|"), ID, ignore.case = TRUE))
+    filter(ID %in% cmplx_ids)
   
   cmplx_fmt <- df %>%  # format for plot
     left_join(cmplx_annots, by = c("orthogroup" = "ID")) %>%
     left_join(species_labels, by = c("species" = "code")) %>%
+    mutate(set = ifelse(set == "Viridiplantae", "Archaeplastida", set)) %>% 
     mutate(set = as.factor(set)) %>%
     group_by(set) %>%  # omg ->
     arrange(desc(species_short)) %>%  # this works ->
@@ -159,10 +168,15 @@ generate_plot <- function(df, outfile){
     pull(line_size) %>%
     unique()
   
+  # lock in var orders
+  df$set <- factor(df$set, levels = clade_order)
+  df$species <- factor(df$species, levels = species_order)
+  
+  # generate plot
   final_plot <- ggplot(df, aes(x = fraction_id, y = PSMs)) +
     geom_line(aes(group = human_genes_fmt, color = set),
               size = line_var) +
-    facet_grid(human_genes_fmt ~ species_short,
+    facet_grid(human_genes_fmt ~ species,
                switch = "y",
                scales = "free") +
     scale_color_manual(values = pal_npg) +
@@ -190,7 +204,9 @@ generate_plot <- function(df, outfile){
   
 }
 
-# wrapper for the pipeline
+# -----------------------------------------------------
+#################### wrapper ####################
+# -----------------------------------------------------
 plot_sparklines <- function(cmplx_file, sep = ',', 
                             best_exp, sample_clades,
                             outfile = NULL){
@@ -204,6 +220,7 @@ plot_sparklines <- function(cmplx_file, sep = ',',
     outfile_name <- outfile
   } else {
     outfile_name <- tools::file_path_sans_ext(cmplx_file)
+    outfile_name <- paste0(outfile_name, "_sparklines")
     if(best_exp == TRUE){
       outfile_name <- paste0(outfile_name, ".sample_exp")
     }
@@ -225,5 +242,4 @@ plot_sparklines <- function(cmplx_file, sep = ',',
   
 }
 
-plot_sparklines(cmplx_file = args$cmplx_file, outfile = args$outfile, sep = args$sep, 
-                best_exp = args$best_exp, sample_clades = args$sample_clades)
+plot_sparklines(cmplx_file = args$cmplx_file, outfile = args$outfile, sep = args$sep, best_exp = args$best_exp, sample_clades = args$sample_clades)
