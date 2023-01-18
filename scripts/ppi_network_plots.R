@@ -431,7 +431,8 @@ phylo <- clustering %>%
                                   clade == 'plants_1' ~ 'Viridiplantae',
                                   clade == 'tsar_1' ~ 'TSAR',
                                   clade == 'excavate_1' ~ 'Excavate')) %>%
-  mutate(axis = 1)
+  mutate(axis = 1) %>%
+  arrange(desc(filtered_cmplx_name))
 
 ggplot(phylo, aes(x = clade_proper, y = filtered_cmplx_name)) +
   geom_dotplot(binwidth = 1, stroke = 1, binaxis = "y",
@@ -449,128 +450,124 @@ ggplot(phylo, aes(x = clade_proper, y = filtered_cmplx_name)) +
 cmplx_names <- pull(clustering, filtered_cmplx_name) %>% unique()
 
 theme_graph(base_family="sans")
-for (c in cmplx_names) {
   
-  complex <- c
-  cluster_cut_level <- 7  # between 1-9; lower = bigger clusters
-  
-  cut_col <- colnames(clustering[(cluster_cut_level + 1)])
-  
-  print(complex)
-  Sys.sleep(2)
-  
-  clst_filt <- clustering %>%
-    select(ID, (cluster_cut_level + 1), animals, plants, tsar, excavate, 
-           filtered_cmplx_name, human_gene_names_primary, human_protein_names) %>% 
-    filter(filtered_cmplx_name == complex) %>%
-    mutate(gene_name_fmt = str_replace(human_gene_names_primary, "^([^,]*,[^,]*),.*", "\\1 ...")) %>%
-    mutate(gene_name_fmt = str_replace(gene_name_fmt, ", ", "\n"))
-  
-  print(clst_filt)
-  Sys.sleep(2)
-  
-  # get scores for desired complex
-  ppi_scores_filt <- ppi_scores %>%
-    filter(grepl(paste(clst_filt$ID, collapse = "|"), ID, ignore.case = TRUE)) %>% 
-    separate(ID, into = c("ID1", "ID2"), sep = " ")
-  
-  # made node list
-  nodes <- clst_filt %>%
-    select(ID) %>%
-    rename(label = ID) %>%
-    rowid_to_column("id")
-  
-  # make edge list
-  edges <- ppi_scores_filt %>%
-    rename(weight = P_1) %>% 
-    left_join(nodes, by = c("ID1" = "label")) %>%
-    rename(from = id) %>%
-    left_join(nodes, by = c("ID2" = "label")) %>%
-    rename(to = id) %>%
-    select(from, to, weight, set) %>%
-    na.omit()
-  
-  # make (ggraph-specific) vertices list
-  vertices <- clst_filt %>%
-    rowid_to_column("idx") %>%
-    filter(idx %in% c(edges$to, edges$from))
-  
-  # reload libraries in case functions are masked by other network libraries
-  library(tidygraph)
-  library(ggraph)
-  
-  ppi_tidygraph <- graph_from_data_frame(edges, vertices = vertices, directed = TRUE)
-  # or like this
-  # ppi_tidygraph <- tbl_graph(nodes = nodes, edges = edges, directed = TRUE)
-  # or from an igraph object
-  # ppi_tidygraph <- as_tbl_graph(ppi_igraph)
-  
-  # the nodes tibble is "activated" by default for manipulation
-  # can activate edges tibble like so:
-  # ppi_tidygraph %>%
-  #  activate(edges) %>%
-  #  arrange(desc(weight))
-  
-  # plot network
-  set.seed(13)
-  random_fill = sample(palette_pretty, 1)
-  
-  # auto-pick a layout
-  ppi_network <- ggraph(ppi_tidygraph, layout = "nicely") +
-    geom_edge_link(aes(width = weight),
-                   alpha = 0.25) +
-    geom_node_point(size = 20, aes(color = as.factor(get(cut_col))),
-                    alpha = 0.9) +
-    scale_edge_width_continuous(range = c(0.1, 6)) +
-    geom_node_text(aes(label = gene_name_fmt),
-                   repel = FALSE,
-                   size = 4,
-                   color = "black",
-                   fontface = "bold") +
-    labs(edge_width = "Interaction Score",
-         color = "Cluster",
-         title = complex) +
-    scale_color_manual(values = random_fill) +
-    theme_graph() +
-    theme(legend.position="none") #+
-  #coord_fixed()
-  ppi_network
-  
-  Sys.sleep(2)
-  
-  ppi_network %>% ggsave(paste0(workdir, "leca_pairs_ppi_networks/", complex, "_network_", Sys.Date(), ".pdf"), ., device = "pdf", 
-                         width = 8, height = 4, units = "in")
-  ppi_network %>% ggsave(paste0(workdir, "leca_pairs_ppi_networks/", complex, "_network_", Sys.Date(), ".png"), ., device = "png", 
-                         width = 8, height = 4, units = "in")
-  
-  clst_filt %>% write_csv(paste0(workdir, "leca_pairs_ppi_networks/", complex, "_ProtAnnots", Sys.Date(), ".csv"))
-  
-  # get clade info
-  phylo_filt <- phylo %>%
-    filter(filtered_cmplx_name == complex)
-  
-  # plot clade info
-  clade_dots <- ggplot(phylo_filt, aes(x = clade_proper, y = filtered_cmplx_name)) +
-    geom_dotplot(binwidth = 1, stroke = 1, binaxis = "y",
-                 stackdir = "center", aes(fill = conserved_interaction)) +
-    scale_fill_manual(values = c("white", "#1E1E1E")) +
-    theme(axis.title.x=element_blank(),
-          axis.ticks.x=element_blank(),
-          axis.title.y=element_blank(),
-          axis.ticks.y=element_blank(),
-          panel.border = element_blank(), 
-          #panel.grid.major = element_blank(),
-          #panel.grid.minor = element_blank(),
-          legend.position = "none")
-  
-  Sys.sleep(20)
-  
-  clade_dots %>% ggsave(paste0(workdir, "leca_pairs_ppi_networks/", complex, "_phylodist_", Sys.Date(), ".pdf"), ., device = "pdf", 
-                         width = 8, height = 4, units = "in")
-  clade_dots %>% ggsave(paste0(workdir, "leca_pairs_ppi_networks/", complex, "_phylodist_", Sys.Date(), ".png"), ., device = "png", 
-                         width = 8, height = 4, units = "in")
-  
-}
+complex <- c
+cluster_cut_level <- 7  # between 1-9; lower = bigger clusters
+
+cut_col <- colnames(clustering[(cluster_cut_level + 1)])
+
+print(complex)
+Sys.sleep(2)
+
+clst_filt <- clustering %>%
+  select(ID, (cluster_cut_level + 1), animals, plants, tsar, excavate, 
+         filtered_cmplx_name, human_gene_names_primary, human_protein_names) %>% 
+  #filter(filtered_cmplx_name == complex) %>%
+  mutate(gene_name_fmt = str_replace(human_gene_names_primary, "^([^,]*,[^,]*),.*", "\\1 ...")) %>%
+  mutate(gene_name_fmt = str_replace(gene_name_fmt, ", ", "\n")) %>% 
+  mutate(gene_name_fmt = str_replace(gene_name_fmt, "NA, ", ""))
+
+print(clst_filt)
+Sys.sleep(2)
+
+# get scores for desired complex
+ppi_scores_filt <- ppi_scores %>%
+  filter(grepl(paste(clst_filt$ID, collapse = "|"), ID, ignore.case = TRUE)) %>% 
+  separate(ID, into = c("ID1", "ID2"), sep = " ")
+
+# made node list
+nodes <- clst_filt %>%
+  select(ID) %>%
+  rename(label = ID) %>%
+  rowid_to_column("id")
+
+# make edge list
+edges <- ppi_scores_filt %>%
+  rename(weight = P_1) %>% 
+  left_join(nodes, by = c("ID1" = "label")) %>%
+  rename(from = id) %>%
+  left_join(nodes, by = c("ID2" = "label")) %>%
+  rename(to = id) %>%
+  select(from, to, weight, set) %>%
+  na.omit()
+
+# make (ggraph-specific) vertices list
+vertices <- clst_filt %>%
+  rowid_to_column("idx") %>%
+  filter(idx %in% c(edges$to, edges$from))
+
+# reload libraries in case functions are masked by other network libraries
+library(tidygraph)
+library(ggraph)
+
+ppi_tidygraph <- graph_from_data_frame(edges, vertices = vertices, directed = TRUE)
+# or like this
+# ppi_tidygraph <- tbl_graph(nodes = nodes, edges = edges, directed = TRUE)
+# or from an igraph object
+# ppi_tidygraph <- as_tbl_graph(ppi_igraph)
+
+# the nodes tibble is "activated" by default for manipulation
+# can activate edges tibble like so:
+# ppi_tidygraph %>%
+#  activate(edges) %>%
+#  arrange(desc(weight))
+
+# plot network
+set.seed(13)
+random_fill = sample(palette_pretty, 1)
+pretty_multiplied = replicate(10, palette_pretty)
+
+# auto-pick a layout
+ppi_network <- ggraph(ppi_tidygraph, layout = "nicely") +
+  geom_edge_link(aes(width = weight),
+                 alpha = 0.25) +
+  geom_node_point(size = 20, aes(color = as.factor(get(cut_col))),
+                  alpha = 0.9) +
+  scale_edge_width_continuous(range = c(0.1, 6)) +
+  geom_node_text(aes(label = gene_name_fmt),
+                 repel = FALSE,
+                 size = 4,
+                 color = "black",
+                 fontface = "bold") +
+  labs(edge_width = "Interaction Score",
+       color = "Cluster") +
+  scale_color_manual(values = pretty_multiplied) +
+  theme_graph() +
+  theme(legend.position="none") #+
+#coord_fixed()
+ppi_network
+
+ppi_network %>% ggsave(paste0(workdir, "leca_pairs_ppi_networks/", "pairs-network_", Sys.Date(), ".pdf"), ., device = "pdf", 
+                       width = 10, height = 8, units = "in")
+ppi_network %>% ggsave(paste0(workdir, "leca_pairs_ppi_networks/", "pairs-network_", Sys.Date(), ".png"), ., device = "png", 
+                       width = 10, height = 8, units = "in")
+
+clst_filt %>% write_csv(paste0(workdir, "leca_pairs_ppi_networks/", "pairs-network_ProtAnnots", Sys.Date(), ".csv"))
+
+# get clade info
+phylo_filt <- phylo %>%
+  filter(filtered_cmplx_name == complex)
+
+# plot clade info
+theme_set(theme_minimal())
+clade_dots <- ggplot(phylo, aes(x = clade_proper, y = filtered_cmplx_name)) +
+  geom_dotplot(binwidth = 1, stroke = 1, binaxis = "y",
+               stackdir = "center", aes(fill = conserved_interaction)) +
+  scale_fill_manual(values = c("white", "#1E1E1E")) +
+  theme(axis.title.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        panel.border = element_blank(), 
+        #panel.grid.major = element_blank(),
+        #panel.grid.minor = element_blank(),
+        legend.position = "none")
+clade_dots
+
+clade_dots %>% ggsave(paste0(workdir, "leca_pairs_ppi_networks/", complex, "phylodist_", Sys.Date(), ".pdf"), ., device = "pdf", 
+                       width = 8, height = 4, units = "in")
+clade_dots %>% ggsave(paste0(workdir, "leca_pairs_ppi_networks/", complex, "phylodist_", Sys.Date(), ".png"), ., device = "png", 
+                       width = 8, height = 4, units = "in")
 
 # --------- using igraph package ---------
 # library(igraph)

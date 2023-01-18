@@ -31,7 +31,33 @@ cfms_rd <- data.table::fread("/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data
   
 # kog <-> human <-> arath gene names
 message("\nLoading euNOG annotations.")
-annots <- read_tsv("/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/sparklines/input_data/leca_euNOGs_annotated.fmt.tsv")
+annots <- read_tsv('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_annotated.fmt.tsv') %>%
+  select(ID, matches('*genes_fmt*'),
+         human_protein_names,
+         human_function_cc) %>%
+  mutate(gene_names = coalesce(human_genes_fmt,
+                               arath_genes_fmt,
+                               ID)) %>%
+  select(-matches('*genes_fmt*')) %>%
+  select(ID, gene_names, everything())
+
+multimapped <- annots %>%
+  group_by(gene_names) %>%
+  tally() %>%
+  filter(n > 1)
+
+annots$gene_names = gsub(x = annots$gene_names, pattern = ";",
+                         replacement = ",")
+annots$gene_names = gsub(x = annots$gene_names, pattern = "NA ",
+                         replacement = "")
+
+annots_fmt <- annots %>%
+  mutate(gene_names = str_replace(gene_names, "^([^,]*,[^,]*),.*", "\\1 ...")) %>% 
+  mutate(id_suffix = paste0("(",ID,")")) %>%
+  mutate(gene_names = ifelse(gene_names %in% multimapped$gene_names, 
+                             paste(gene_names,id_suffix,sep="\n"), 
+                             gene_names)) %>%
+  select(-id_suffix)
 
 # load in formal species names
 message("\nLoading species information.")
@@ -63,14 +89,15 @@ get_cmplx <- function(cmplx_file, sep = ',',
     pull(granulated_cmplx_name) %>%
     unique()
   
-  cmplx_ids <- cmplx %>%
-    pull(ID) %>%
-    unique()
+  cmplx_ids_ordered <- cmplx %>%
+    select(ID, characterization_status) %>%
+    unique() %>%
+    mutate(fct_lvl = row_number())
   
   message("Pulling sparklines for: ", cmplx_name)
   
-  cmplx_annots <- annots %>%  # get annotations
-    filter(ID %in% cmplx_ids)
+  cmplx_annots <- annots_fmt %>%  # get annotations
+    filter(ID %in% cmplx_ids_ordered$ID)
   
   message("IDs corresponding to this complex: \n", paste(cmplx_annots$ID, "\n"))
   
@@ -83,7 +110,7 @@ get_cmplx <- function(cmplx_file, sep = ',',
     
     message("Extracting best-sampled experiment ...")
     cmplx_rd <- cfms_rd %>%  # get complex from *ALL RAW* data
-      filter(orthogroup %in% cmplx_ids) # (takes awhile)
+      filter(orthogroup %in% cmplx_ids_ordered$ID) # (takes awhile)
     
     # extract best sampled experiment for each species
     cmplx_rd_ranked <- cmplx_rd %>%
@@ -94,7 +121,7 @@ get_cmplx <- function(cmplx_file, sep = ',',
       
     # extract from normalized data
     cmplx_eluts <- cfms_nd %>%  # get complex from *ALL NORMALIZED* data
-      filter(orthogroup %in% cmplx_ids) %>%  # (takes awhile)
+      filter(orthogroup %in% cmplx_ids_ordered$ID) %>%  # (takes awhile)
       mutate(filter_col = paste(species, experiment, sep = " ")) %>%
       filter(filter_col %in% cmplx_rd_ranked$filter_col) %>%
       mutate(line_size = 1.25)
@@ -102,7 +129,7 @@ get_cmplx <- function(cmplx_file, sep = ',',
   } else {
     
     cmplx_eluts <- cfms_nd %>%  # get complex from *ALL NORMALIZED* data
-      filter(orthogroup %in% cmplx_ids) %>%  # (takes awhile)
+      filter(orthogroup %in% cmplx_ids_ordered$ID) %>%  # (takes awhile)
       mutate(line_size = 1)
     
   }
@@ -118,12 +145,16 @@ get_cmplx <- function(cmplx_file, sep = ',',
     
     cmplx_eluts <- cmplx_eluts %>%
       filter(species %in% species_subset) %>%  ## NOTE::FOR SPECIES SUBSETTING
-      mutate(line_size = 1.5)
+      mutate(line_size = 1.35)
   }
   
+  # retain cluster order for subunits
+  cmplx_eluts_out <- cmplx_eluts %>%
+    left_join(cmplx_ids_ordered)
+  
   message("CFMS data:")
-  print(cmplx_eluts)
-  return(cmplx_eluts)
+  print(cmplx_eluts_out)
+  return(cmplx_eluts_out)
   
 }
 
@@ -135,13 +166,16 @@ fmt_df <- function(df){
     pull(orthogroup) %>%
     unique()
   
-  cmplx_annots <- annots %>%  # get annotations
+  cmplx_annots <- annots_fmt %>%  # get annotations
     filter(ID %in% cmplx_ids)
   
   cmplx_fmt <- df %>%  # format for plot
     left_join(cmplx_annots, by = c("orthogroup" = "ID")) %>%
     left_join(species_labels, by = c("species" = "code")) %>%
-    mutate(set = ifelse(set == "Viridiplantae", "Archaeplastida", set)) %>% 
+    mutate(set = ifelse(set == "Viridiplantae", "Archaeplastida", set)) %>%
+    mutate(gene_names_nov = ifelse(str_detect(characterization_status, 'Novel'),
+                                   paste0('*', gene_names),
+                                   gene_names)) %>% 
     mutate(set = as.factor(set)) %>%
     group_by(set) %>%  # omg ->
     arrange(desc(species_short)) %>%  # this works ->
@@ -169,14 +203,15 @@ generate_plot <- function(df, outfile){
     unique()
   
   # lock in var orders
-  df$set <- factor(df$set, levels = clade_order)
-  df$species <- factor(df$species, levels = species_order)
+  df$gene_names <- factor(df$gene_names, levels = df$fct_lvl) # prot cluster order
+  df$set <- factor(df$set, levels = clade_order) # major clade order
+  df$species <- factor(df$species, levels = species_order) # phylogenetic order
   
   # generate plot
   final_plot <- ggplot(df, aes(x = fraction_id, y = PSMs)) +
-    geom_line(aes(group = human_genes_fmt, color = set),
+    geom_line(aes(group = gene_names, color = set),
               size = line_var) +
-    facet_grid(human_genes_fmt ~ species,
+    facet_grid(gene_names ~ species,
                switch = "y",
                scales = "free") +
     scale_color_manual(values = pal_npg) +
