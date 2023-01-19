@@ -89,6 +89,7 @@ get_cmplx <- function(cmplx_file, sep = ',',
     pull(granulated_cmplx_name) %>%
     unique()
   
+  # get cluster order for prots
   cmplx_ids_ordered <- cmplx %>%
     select(ID, characterization_status) %>%
     unique() %>%
@@ -96,7 +97,8 @@ get_cmplx <- function(cmplx_file, sep = ',',
   
   message("Pulling sparklines for: ", cmplx_name)
   
-  cmplx_annots <- annots_fmt %>%  # get annotations
+  # get annotations
+  cmplx_annots <- annots_fmt %>%
     filter(ID %in% cmplx_ids_ordered$ID)
   
   message("IDs corresponding to this complex: \n", paste(cmplx_annots$ID, "\n"))
@@ -145,12 +147,13 @@ get_cmplx <- function(cmplx_file, sep = ',',
     
     cmplx_eluts <- cmplx_eluts %>%
       filter(species %in% species_subset) %>%  ## NOTE::FOR SPECIES SUBSETTING
-      mutate(line_size = 1.35)
+      mutate(line_size = 1.5)
   }
   
   # retain cluster order for subunits
   cmplx_eluts_out <- cmplx_eluts %>%
-    left_join(cmplx_ids_ordered)
+    unique() %>% 
+    left_join(cmplx_ids_ordered, by = c("orthogroup" = "ID"))
   
   message("CFMS data:")
   print(cmplx_eluts_out)
@@ -177,9 +180,8 @@ fmt_df <- function(df){
                                    paste0('*', gene_names),
                                    gene_names)) %>% 
     mutate(set = as.factor(set)) %>%
-    group_by(set) %>%  # omg ->
-    arrange(desc(species_short)) %>%  # this works ->
-    mutate(species_short = as.factor(species_short))  # for reordering :D
+    mutate(gene_names = fct_reorder(gene_names, fct_lvl)) %>%
+    mutate(gene_names_nov = fct_reorder(gene_names_nov, fct_lvl))
   
   message("Formatted data frame:")
   print(cmplx_fmt)
@@ -197,13 +199,16 @@ generate_plot <- function(df, outfile){
                "#F39B7F", "#8491B4", "#91D1C2", "#DC0000",
                "#7E6148", "#B09C85")
   
+  # get cmplx size
+  num_units <- length(pull(df, orthogroup) %>% unique)
+  print(paste0("# subunits = ", num_units))
+  
   # get line size
   line_var <- df %>%
     pull(line_size) %>%
     unique()
   
   # lock in var orders
-  df$gene_names <- factor(df$gene_names, levels = df$fct_lvl) # prot cluster order
   df$set <- factor(df$set, levels = clade_order) # major clade order
   df$species <- factor(df$species, levels = species_order) # phylogenetic order
   
@@ -211,7 +216,7 @@ generate_plot <- function(df, outfile){
   final_plot <- ggplot(df, aes(x = fraction_id, y = PSMs)) +
     geom_line(aes(group = gene_names, color = set),
               size = line_var) +
-    facet_grid(gene_names ~ species,
+    facet_grid(gene_names_nov ~ species,
                switch = "y",
                scales = "free") +
     scale_color_manual(values = pal_npg) +
