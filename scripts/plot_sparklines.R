@@ -2,10 +2,12 @@
 # THIS SCRIPT WAS DEVELOPED AND TESTED BY:
 # Rachael M. Cox
 # rachaelcox@utexas.edu
-# Last updated: 01/11/2023
+# Last updated: 01/18/2023
 #################################################
 library(argparse)
 library(tidyverse)
+library(scales)
+
 parser <- ArgumentParser()
 parser$add_argument("-i", "--cmplx_file", dest="cmplx_file", required=TRUE,
                     help="File containing a complex (one row per protein or orthogroup), identifier column = 'ID'")
@@ -29,35 +31,8 @@ message("\nLoading CFMS data w/ raw PSMs.")
 cfms_rd <- data.table::fread("/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/sparklines/input_data/all_euk_cfms.concat.raw.tidy",
                              sep = ",")
   
-# kog <-> human <-> arath gene names
-message("\nLoading euNOG annotations.")
-annots <- read_tsv('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_annotated.fmt.tsv') %>%
-  select(ID, matches('*genes_fmt*'),
-         human_protein_names,
-         human_function_cc) %>%
-  mutate(gene_names = coalesce(human_genes_fmt,
-                               arath_genes_fmt,
-                               ID)) %>%
-  select(-matches('*genes_fmt*')) %>%
-  select(ID, gene_names, everything())
-
-multimapped <- annots %>%
-  group_by(gene_names) %>%
-  tally() %>%
-  filter(n > 1)
-
-annots$gene_names = gsub(x = annots$gene_names, pattern = ";",
-                         replacement = ",")
-annots$gene_names = gsub(x = annots$gene_names, pattern = "NA ",
-                         replacement = "")
-
-annots_fmt <- annots %>%
-  mutate(gene_names = str_replace(gene_names, "^([^,]*,[^,]*),.*", "\\1 ...")) %>% 
-  mutate(id_suffix = paste0("(",ID,")")) %>%
-  mutate(gene_names = ifelse(gene_names %in% multimapped$gene_names, 
-                             paste(gene_names,id_suffix,sep="\n"), 
-                             gene_names)) %>%
-  select(-id_suffix)
+# annotations
+annots <- read_csv('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_plot_annots.csv')
 
 # load in formal species names
 message("\nLoading species information.")
@@ -98,7 +73,7 @@ get_cmplx <- function(cmplx_file, sep = ',',
   message("Pulling sparklines for: ", cmplx_name)
   
   # get annotations
-  cmplx_annots <- annots_fmt %>%
+  cmplx_annots <- annots %>%
     filter(ID %in% cmplx_ids_ordered$ID)
   
   message("IDs corresponding to this complex: \n", paste(cmplx_annots$ID, "\n"))
@@ -169,7 +144,7 @@ fmt_df <- function(df){
     pull(orthogroup) %>%
     unique()
   
-  cmplx_annots <- annots_fmt %>%  # get annotations
+  cmplx_annots <- annots %>%  # get annotations
     filter(ID %in% cmplx_ids)
   
   cmplx_fmt <- df %>%  # format for plot
@@ -180,7 +155,7 @@ fmt_df <- function(df){
                                    paste0('*', gene_names),
                                    gene_names)) %>% 
     mutate(set = as.factor(set)) %>%
-    mutate(gene_names = fct_reorder(gene_names, fct_lvl)) %>%
+    mutate(gene_names = fct_reorder(gene_names, fct_lvl)) %>% # maintain prot cluster order
     mutate(gene_names_nov = fct_reorder(gene_names_nov, fct_lvl))
   
   message("Formatted data frame:")
@@ -201,7 +176,6 @@ generate_plot <- function(df, outfile){
   
   # get cmplx size
   num_units <- length(pull(df, orthogroup) %>% unique)
-  print(paste0("# subunits = ", num_units))
   
   # get line size
   line_var <- df %>%
@@ -229,16 +203,24 @@ generate_plot <- function(df, outfile){
           strip.text.y.left = element_text(angle = 0)) +
     theme(strip.background = element_rect(
       color="#454545", fill="#454545", size=1.5, linetype="solid"),
-      panel.spacing.x = unit(0.2, "lines"),
-      strip.text.x = element_text(size = 5.5, color = "white"),
-      strip.text.y = element_text(size = 12, color = "white"),
+      panel.spacing.x = unit(0.15, "lines"),
+      strip.text.x = element_text(size = 7.5, color = "white"),
+      strip.text.y = element_text(size = 13, color = "white"),
       legend.title=element_blank(),
       legend.position = "top",
       #legend.key.height= unit(5, 'cm'),
       legend.key.width= unit(2, 'cm'),
-      legend.text = element_text(size=18)) +
+      legend.text = element_text(size=18),
+      plot.margin = unit(c(0,0.5,0.5,0), "cm")) +
     guides(linetype = guide_legend(override.aes = list(size = 10)))
   final_plot
+  
+  if(num_units <= 5){
+    
+    final_plot <- final_plot +
+      theme(strip.text.x = element_text(size = 9, color = "white"),
+            strip.text.y = element_text(size = 18, color = "white"))
+  }
   
   return(final_plot)
   
@@ -254,6 +236,7 @@ plot_sparklines <- function(cmplx_file, sep = ',',
   cmplx <- get_cmplx(cmplx_file, sep,
                      best_exp, sample_clades)
   cmplx_fmt <- fmt_df(cmplx)
+  
   plot <- generate_plot(cmplx_fmt)
   
   if(!is.null(outfile)){
@@ -273,12 +256,31 @@ plot_sparklines <- function(cmplx_file, sep = ',',
           paste0(outfile_name, ".pdf\n"), 
           paste0(outfile_name, ".png"))
   
-  plot %>% ggsave(paste0(outfile_name, ".pdf"), ., device = "pdf", 
-                  width = 16, height = 9, units = "in")
-  plot %>% ggsave(paste0(outfile_name, ".png"), ., device = "png", 
-                  width = 16, height = 9, units = "in")
+  # get cmplx size
+  num_units <- length(pull(cmplx, orthogroup) %>% unique)
   
-  message("Done!")
+  # save plots based on complex size
+  if(num_units <= 5){
+    
+    print(paste0("# subunits = ", num_units))
+    message("Adjusting plot dimensions ...")
+    hval = 1.5+num_units
+
+    plot %>% ggsave(paste0(outfile_name, ".pdf"), ., device = "pdf", 
+                    width = 16, height = hval, units = "in")
+    plot %>% ggsave(paste0(outfile_name, ".png"), ., device = "png", 
+                    width = 16, height = hval, units = "in")
+  
+  } else {
+    
+    plot %>% ggsave(paste0(outfile_name, ".pdf"), ., device = "pdf", 
+                    width = 16, height = 9, units = "in")
+    plot %>% ggsave(paste0(outfile_name, ".png"), ., device = "png", 
+                    width = 16, height = 9, units = "in")
+    
+    message("Done!")
+    
+  }
   
 }
 
