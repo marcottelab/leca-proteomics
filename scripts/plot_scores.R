@@ -23,7 +23,9 @@ args <- parser$parse_args()
 # -----------------------------------------------------
 
 # coverage data
-scores <- read_csv('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/apms/clustered_og_scores_subset.csv')
+scores <- read_csv('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/apms/clustered_og_scores_subset.csv') %>%
+  mutate(ID2 = coalesce(ID2, ID1))
+
 score_cols = names(select(scores, !c(ID1, ID2, cmplx)))
 
 # calculate min/max for each metric
@@ -50,7 +52,7 @@ get_data <- function(cmplx_file){
   cmplx_ids_ordered <- cmplx_df %>%
     select(ID, characterization_status) %>%
     unique() %>%
-    mutate(fct_lvl = row_number())
+    mutate(fct_lvl = as.factor(row_number()))
   
   cmplx_scores <- scores %>%
     filter(cmplx == cmplx_name) %>%
@@ -70,8 +72,8 @@ get_data <- function(cmplx_file){
     rename(ID2_human_gene = gene_names,
            ID2_fct_lvl = fct_lvl) %>%
     select(-characterization_status) %>%
-    mutate(ID1_human_gene = fct_reorder(ID1_human_gene, ID1_fct_lvl),
-           ID2_human_gene = fct_reorder(ID2_human_gene, ID2_fct_lvl)) %>% 
+    mutate(ID1_human_gene = fct_reorder(ID1_human_gene, as.numeric(ID1_fct_lvl)),
+           ID2_human_gene = fct_reorder(ID2_human_gene, as.numeric(ID2_fct_lvl))) %>% 
     select(ID1, ID1_human_gene, ID2, ID2_human_gene,
            everything())
   
@@ -124,7 +126,7 @@ plot_scores <- function(df, score_col) {
   ids2 <- pull(df, ID2) %>% unique
   num_units <- length(unique(append(ids1, ids2)))
   
-  if(num_units >= 12){
+  if(num_units >= 15){
 
     p$layers[[2]] <- NULL
     p <- p +
