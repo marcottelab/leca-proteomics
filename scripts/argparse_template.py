@@ -1,5 +1,5 @@
 """
-Script for hierarchically clustering elution data given various methods and metrics.
+Script for building ...
 @author: Rachael Cox <rachaelcox@utexas.edu>
 """
 
