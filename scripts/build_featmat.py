@@ -18,8 +18,10 @@ import numpy as np
 
 def make_fset(x):
     if len(set(x.split(' '))) < 2:
-        print(f'ERROR: {x} is a self-self correlation (?); dropping row ...')
-        return(np.nan)
+        print(f"WARNING: Correlation metrics for '{x}' (self-self PPI) detected; make sure you mean for this to be included ...")
+        x1 = x.split(' ')[0]
+        fset = frozenset({x1})
+        return(fset)
     else:
         x1 = x.split(' ')[0]
         x2 = x.split(' ')[1]
@@ -33,6 +35,7 @@ def read_files(data_dir, pickle_files=False):
         data_dir = data_dir+"/"
     if pickle_files:
         flist = [f for f in os.listdir(data_dir) if re.match('.*.pkl', f)]
+        flist.sort()
         for f in flist:
             print(f'Reading {f} ...')
             with open(data_dir+f, 'rb') as handle:
@@ -44,6 +47,7 @@ def read_files(data_dir, pickle_files=False):
             fmat_list.append(df)
     else:
         flist = [f for f in os.listdir(data_dir) if not re.match('.*.pkl', f)]
+        flist.sort()
         for f in flist:
             print(f'Reading {f} ...')
             df = pd.read_csv(data_dir+f)
@@ -58,7 +62,9 @@ def read_files(data_dir, pickle_files=False):
 def get_left_join_idx(data_dir, pickle_files, left_file):
     if pickle_files:
         flist = [f for f in os.listdir(data_dir) if re.match('.*.pkl', f)]
+        print(flist)
         left_index = flist.index(left_file)
+        print(f'File "{left_file}" detected @ position {left_index} in file list ...')
         return(left_index)
     else:
         flist = [f for f in os.listdir(data_dir)]
@@ -74,6 +80,7 @@ def build_fmat(fmat_list, join_type='outer', left_index=None):
         fmat = reduce(lambda x, y: x.join(y, how='outer'), fmat_list)
         fmat.fillna(0, inplace=True)
     elif join_type == 'left':
+        print(f'Table of shape {fmat_list[left_index].shape} @ position {left_index} in feature matrix list ...')
         fmat = fmat_list[left_index]
         fmat_list.pop(left_index)
         for df in fmat_list:
