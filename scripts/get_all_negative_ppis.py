@@ -41,20 +41,20 @@ def make_gs_dict(gs_file):
 # reworking to get negative PPIs from observed PPIs in input featmat
 def get_neg_ppis(gs_dict):
 
-    print(f'[{ct}] Getting proteins from positive PPIs to generate negative PPIs ...')
+    print(f'[{ct}] Getting proteins from gold standard PPIs to generate negative PPIs ...')
     random_prots = set()
-    flat_pos_ppis = [pair for pair_list in list(gs_dict.values()) for pair in pair_list]
-    print(f'--> # gold standard pairwise PPIs = {len(set(flat_pos_ppis))}')
-    all_pos_prots = [p for pair in flat_pos_ppis for p in list(pair)]
-    uniq_pos_prots = set(all_pos_prots)
-    print(f'--> # unique gold standard prots = {len(set(uniq_pos_prots))}')
+    flat_gs_ppis = [pair for pair_list in list(gs_dict.values()) for pair in pair_list]
+    print(f'--> # gold standard pairwise PPIs = {len(set(flat_gs_ppis))}')
+    all_gs_prots = [p for pair in flat_gs_ppis for p in list(pair)]
+    uniq_gs_prots = set(all_gs_prots)
+    print(f'--> # unique gold standard prots = {len(set(uniq_gs_prots))}')
     
     print(f'[{ct}] Getting all protein combinations ...')
-    fsets = [frozenset({i, j}) for i,j in list(combinations(list(uniq_pos_prots), 2))]
+    fsets = [frozenset({i, j}) for i,j in list(combinations(list(uniq_gs_prots), 2))]
     print(f'--> # total pairwise PPIs = {len(fsets)}')
     
-    print(f'[{ct}] Removing known positive PPIs from all possible combinations ...')
-    neg_ppis = set(fsets).difference(set(flat_pos_ppis))
+    print(f'[{ct}] Removing known gold standard PPIs from all possible PPI combinations ...')
+    neg_ppis = set(fsets).difference(set(flat_gs_ppis))
     
     print(f'--> # total possible negative PPIs = {len(neg_ppis)}')
     return(neg_ppis)
@@ -68,10 +68,10 @@ def find_obs_labels(fmat_file, all_neg_ppis, gs_dict):
     fmat_ppis = [make_fset(i) for i in fmat['ID']]
     print(f'--> # total PPIs observed in data = {len(fmat_ppis)}')
     
-    print(f'[{ct}] Finding overlap between observed PPIs and negative PPIs ...')
-    flat_pos_ppis = [pair for pair_list in list(gs_dict.values()) for pair in pair_list]
+    print(f'[{ct}] Finding overlap between observed PPIs and gold standard PPIs ...')
+    flat_gs_ppis = [pair for pair_list in list(gs_dict.values()) for pair in pair_list]
     neg_overlap = set(fmat_ppis).intersection(set(all_neg_ppis))
-    pos_overlap = set(fmat_ppis).intersection(set(flat_pos_ppis))
+    pos_overlap = set(fmat_ppis).intersection(set(flat_gs_ppis))
     print(f'--> # total negative PPIs observed in data = {len(neg_overlap)}')
     print(f'--> # total positive PPIs observed in data = {len(pos_overlap)}')
     return(neg_overlap, pos_overlap)
