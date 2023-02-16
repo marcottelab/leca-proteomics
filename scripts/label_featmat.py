@@ -15,10 +15,10 @@ import re
 import random
 import time
 import datetime as dt
+from tqdm import tqdm
 from itertools import combinations
 from itertools import accumulate
 from collections import defaultdict
-ct=dt.datetime.now()
 
 """
 Functions for iterative row-wise labeling:
@@ -78,8 +78,8 @@ Functions for making positive, negative, & group label dictionaries:
 
 # get gold standard ppis
 def make_gs_dict(gs_file):
-    pprint(f'[{ct}] Generating grouped positive PPI labels from gold standard complexes ...')
-    pos_ppi_dict = dict()
+    print(f'[{ct}] Generating grouped positive PPI labels from gold standard complexes ...')
+    gs_dict = dict()
     group_no = 1
     dupes = []
     with open(gs_file, 'r') as f:
@@ -87,7 +87,7 @@ def make_gs_dict(gs_file):
         for p in ppis:
             ogs = p.split(' ')
             fsets = [frozenset({i, j}) for i,j in list(combinations(ogs, 2))]
-            pos_ppi_dict.update({int(group_no): fsets})
+            gs_dict.update({int(group_no): fsets})
             group_no += 1
     return(gs_dict)
 
@@ -97,7 +97,7 @@ def get_neg_ppis(gs_dict):
     print(f'[{ct}] Getting proteins from gold standard PPIs to generate negative PPIs ...')
     random_prots = set()
     flat_gs_ppis = [pair for pair_list in list(gs_dict.values()) for pair in pair_list]
-    print(f'--> # gold standard pairwise PPIs = {len(set(flat_gs_ppis))}')
+    print(f'--> # total possible gold standard PPIs = {len(set(flat_gs_ppis))}')
     all_gs_prots = [p for pair in flat_gs_ppis for p in list(pair)]
     uniq_gs_prots = set(all_gs_prots)
     print(f'--> # unique gold standard prots = {len(set(uniq_gs_prots))}')
@@ -115,7 +115,7 @@ def get_neg_ppis(gs_dict):
 # get ppis actually osberved in data
 def find_obs_labels(fmat_file, all_neg_ppis, gs_dict):
     
-    print(f'[{ct}] Loading features from {fmat_file}...')
+    print(f'[{ct}] Loading PPIs from {fmat_file}...')
     # TODO: add pickle or CSV option
     with open(fmat_file, 'rb') as handle:
         fmat = pickle.load(handle)
@@ -154,6 +154,7 @@ def make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=None):
     print(f'[{ct}] Assigning group numbers ...')
     neg_ppi_dict = dict()
     for i in range(len(final_grp_nums)):
+        print(neg_ppis[i], '\t', final_grp_nums[i])
         neg_ppi_dict.update({neg_ppis[i]: int(final_grp_nums[i])})
     
     print(f'[{ct}] Finished generating positive and negative PPI labels!')
@@ -211,12 +212,12 @@ def label_fmat(fmat_file, pos_dict, neg_dict):
     
     t0 = time.time()
     print(f'[{ct}] Labeling feature matrix (takes awhile) ...')
-    print(fmat.dtypes)
     # get all positive pairs
     pos_pairs = [pair for cmplx in list(pos_dict.values()) for pair in cmplx]
     # label pairs
-    fmat['label'] = [match_label(i, pos_pairs, neg_dict) for i in fmat['frozen_pair']]
-    fmat['group'] = [match_group(i, pos_dict, neg_dict) for i in fmat['frozen_pair']]
+    fmat['label'] = [match_label(i, pos_pairs, neg_dict) for i in tqdm(fmat['frozen_pair'])]
+    print(f'[{ct}] Labeling complex groups ...')
+    fmat['group'] = [match_group(i, pos_dict, neg_dict) for i in tqdm(fmat['frozen_pair'])]
     print(f'[{ct}] Total time to label {len(fmat)} rows: {time.time() - t0} seconds')
     
     num_pos = len(fmat[(fmat['label'] == 1)])
@@ -227,7 +228,7 @@ def label_fmat(fmat_file, pos_dict, neg_dict):
     print(f'[{ct}] Generating merged complex groups ...')
     sdict = make_sprgrp_dict(fmat)
     print(f'[{ct}] Labeling non-redundant complex groups ...')
-    fmat['super_group'] = [match_spr_grp(i, sdict) for i in fmat['group']]
+    fmat['super_group'] = [match_spr_grp(i, sdict) for i in tqdm(fmat['group'])]
     return(fmat)
 
 def format_fmat(labeled_fmat, keep_overlap_groups=False, shuffle_feats=False, shuffle_rows=False):
@@ -254,7 +255,7 @@ def format_fmat(labeled_fmat, keep_overlap_groups=False, shuffle_feats=False, sh
         fmat_fmt = fmat_fmt.drop(['group'], axis=1)
     
     # optionally shuffle row order;
-    # --> technically will be done later w/ sklearn.model_selection.GroupShuffleSplit
+    # --> technically can be done later w/ sklearn.model_selection.GroupShuffleSplit
     # --> but it's here if you want to shuffle at this step for some reason
     if shuffle_rows:
         print(f'[{ct}] Shuffling non-redundant protein complex super groups ...')
@@ -263,7 +264,7 @@ def format_fmat(labeled_fmat, keep_overlap_groups=False, shuffle_feats=False, sh
         fmat_fmt = fmat_fmt.set_index('super_group').loc[grps].reset_index()
     
     print('Final feature matrix:')
-    print(fmat_fmt.head())
+    print(fmat_fmt)
     return(fmat_fmt)
 
 def write_fmat_files(labeled_fmat, fmat_file, outfile=None):
@@ -311,23 +312,29 @@ def write_fmat_files(labeled_fmat, fmat_file, outfile=None):
 
 """ All wrapped together: """
 def main():
-    # if specified, set seed
+    
     t0 = time.time()
+    
+    # if specified, set seed
     if args.seed:
         random.seed(args.seed)
+        
     # make dicts for +/- labels
     gs_dict = make_gs_dict(args.gold_std_file)
     all_neg_ppis = get_neg_ppis(gs_dict)
     obs_neg, obs_pos = find_obs_labels(args.featmat, all_neg_ppis, gs_dict)
-    neg_dict, pos_dict = make_label_dicts(obs_neg, obs_pos, gs_dict)
+    neg_dict, pos_dict = make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=args.num_negatives)
+    
     # label feature matrix
     labeled_fmat = label_fmat(args.featmat, pos_dict, neg_dict)
+    
     # format feature matrix
     fmat_out = format_fmat(labeled_fmat, args.keep_cmplx_overlap, args.shuffle_feats, args.shuffle_rows)
+    
     # write results
     write_fmat_files(fmat_out, args.featmat, args.outfile_name)
     print(f"[{ct}] ---------------------------------------------------------")
-    print(f"[{ct}] Total run time: {(time.time()-t0)/60} minutes.")
+    print(f"[{ct}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")
     print(f"[{ct}] ---------------------------------------------------------")
     
 
@@ -340,10 +347,13 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--featmat", help="(Required) Path to feature matrix you want to label. PPI ID column is a column named 'ID' and protein names are separated by a space.")
 
     # specify positive labels
-    parser.add_argument("-g", "--gold_std_file", help="(Required) Path to file containing gold standard PPIs; 1 complex per line, subunits are space separated.")
+    parser.add_argument("-g", "--gold_std_file", action="store", help="(Required) Path to file containing gold standard PPIs; 1 complex per line, subunits are space separated.")
     
     # specify outfile name (default='featmat', written to the given data directory)
     parser.add_argument("-o", "--outfile_name", action="store", default=None, help="(Optional) Specify the outfile path/name. Defaults are 'featmat_labeled' and 'featmat_labeled.pkl', written to the same directory containing the input.")
+    
+    # specify outfile name (default='featmat', written to the given data directory)
+    parser.add_argument("-n", "--num_negatives", action="store", default=None, help="(Optional) Specify max number of negative labels (default = 3X the number of positive labels).")
     
     # specify outfile name (default='featmat', written to the given data directory)
     parser.add_argument("-s", "--seed", action="store", default=None, help="(Optional) Specify seed to make randomized negative PPIs reproducible.")
@@ -364,4 +374,5 @@ if __name__ == "__main__":
         version="%(prog)s (version {version})".format(version=__version__))
 
     args = parser.parse_args()
+    ct = dt.datetime.now()
     main()

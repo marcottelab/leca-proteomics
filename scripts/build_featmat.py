@@ -14,11 +14,13 @@ import pandas as pd
 import os
 import re
 import time
+import datetime as dt
 import numpy as np
+ct = dt.datetime.now()
 
 def make_fset(x):
     if len(set(x.split(' '))) < 2:
-        print(f"WARNING: Correlation metrics for '{x}' (self-self PPI) detected; make sure you mean for this to be included ...")
+        print(f"[{ct}] WARNING: Correlation metrics for '{x}' (self-self PPI) detected; make sure you mean for this to be included ...")
         x1 = x.split(' ')[0]
         fset = frozenset({x1})
         return(fset)
@@ -37,7 +39,7 @@ def read_files(data_dir, pickle_files=False):
         flist = [f for f in os.listdir(data_dir) if re.match('.*.pkl', f)]
         flist.sort()
         for f in flist:
-            print(f'Reading {f} ...')
+            print(f'[{ct}] Reading {f} ...')
             with open(data_dir+f, 'rb') as handle:
                 df = pickle.load(handle)
             df = df.round(4)
@@ -49,22 +51,21 @@ def read_files(data_dir, pickle_files=False):
         flist = [f for f in os.listdir(data_dir) if not re.match('.*.pkl', f)]
         flist.sort()
         for f in flist:
-            print(f'Reading {f} ...')
+            print(f'[{ct}] Reading {f} ...')
             df = pd.read_csv(data_dir+f)
             df = df.round(4)
             df['frozen_pair'] = [make_fset(i) for i in df['ID']]
             df.drop(['ID'], axis=1, inplace=True)
             df.dropna(subset=['frozen_pair'], inplace=True)
             fmat_list.append(df)
-    print(f'Total time to read in & format all files: {time.time() - t0} seconds')
+    print(f'[{ct}] Total time to read in & format all files: {time.time() - t0} seconds')
     return(fmat_list)
 
 def get_left_join_idx(data_dir, pickle_files, left_file):
     if pickle_files:
         flist = [f for f in os.listdir(data_dir) if re.match('.*.pkl', f)]
-        print(flist)
+        flist.sort()
         left_index = flist.index(left_file)
-        print(f'File "{left_file}" detected @ position {left_index} in file list ...')
         return(left_index)
     else:
         flist = [f for f in os.listdir(data_dir)]
@@ -72,7 +73,7 @@ def get_left_join_idx(data_dir, pickle_files, left_file):
         return(left_index)
     
 def build_fmat(fmat_list, join_type='outer', left_index=None):
-    print('Merging features matrices ...')
+    print(f'[{ct}] Merging features matrices ...')
     t0 = time.time()
     for df in fmat_list:
         df.set_index(['frozen_pair'], inplace=True)
@@ -80,7 +81,6 @@ def build_fmat(fmat_list, join_type='outer', left_index=None):
         fmat = reduce(lambda x, y: x.join(y, how='outer'), fmat_list)
         fmat.fillna(0, inplace=True)
     elif join_type == 'left':
-        print(f'Table of shape {fmat_list[left_index].shape} @ position {left_index} in feature matrix list ...')
         fmat = fmat_list[left_index]
         fmat_list.pop(left_index)
         for df in fmat_list:
@@ -91,9 +91,9 @@ def build_fmat(fmat_list, join_type='outer', left_index=None):
     fmat.drop(['frozen_pair'], axis=1, inplace=True)
     feat_cols = [c for c in fmat.columns.values.tolist() if c != 'ID']
     fmat = fmat[['ID'] + feat_cols]
-    print(f'Final feature matrix {fmat.shape}:')
+    print(f'[{ct}] Final feature matrix {fmat.shape}:')
     print(fmat.head())
-    print(f'Total time to merge feature matrices: {time.time() - t0} seconds')
+    print(f'[{ct}] Total time to merge feature matrices: {time.time() - t0} seconds')
     return(fmat)
 
 def write_fmat(fmat, data_dir, outfile_name):
@@ -102,15 +102,18 @@ def write_fmat(fmat, data_dir, outfile_name):
         data_dir = data_dir+"/"
     if not outfile_name:
         outfile_name = data_dir+'featmat'
-    print(f"Serializing joined matrix to {outfile_name+'.pkl'} ... ")
+    print(f"[{ct}] Serializing joined matrix to {outfile_name+'.pkl'} ... ")
     fmat.to_pickle(outfile_name+'.pkl')
-    print(f"Writing joined matrix to CSV {outfile_name} ...")
+    print(f"[{ct}] Writing joined matrix to CSV {outfile_name} ...")
     fmat.to_csv(outfile_name, index=False)
-    print('Done!')
-    print(f'Total time to write out final merged feature matrix: {time.time() - t0} seconds')
+    print(f'[{ct}] Done!')
+    print(f'[{ct}] Total time to write out results: {time.time() - t0} seconds')
 
 
 def main():
+    
+    t = time.time()
+    
     # get files
     fmat_list = read_files(args.directory, args.pickle)
     # eval join type & build feature matrix
@@ -121,6 +124,10 @@ def main():
         fmat = build_fmat(fmat_list)
     # write out results
     write_fmat(fmat, args.directory, args.outfile_name)
+    
+    print(f"[{ct}] ---------------------------------------------------------")
+    print(f"[{ct}] Total run time: {(time.time()-t)/60} minutes.")
+    print(f"[{ct}] ---------------------------------------------------------")
         
 if __name__ == "__main__":
     """ This is executed when run from the command line """
@@ -145,4 +152,5 @@ if __name__ == "__main__":
         version="%(prog)s (version {version})".format(version=__version__))
 
     args = parser.parse_args()
+    ct = dt.datetime.now()
     main()
