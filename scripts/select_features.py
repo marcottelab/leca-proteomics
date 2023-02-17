@@ -78,7 +78,7 @@ def fit_rfe(model, fold, X_train, y_train):
     
     return(rfecv)
 
-def plot_results(rfecv_fit, fold, X_test, y_test, outdir):
+def plot_results(rfecv_fit, fold, X_test, y_test, outname, outdir):
     
     # plot results
     print(f'Generating RFECV evaluation plots ...')
@@ -127,7 +127,7 @@ def main():
         random.seed(args.seed)
     
     # define split strategy
-    gss = GroupShuffleSplit(n_splits = args.num_splits, train_size=args.train_size)
+    gss = GroupShuffleSplit(n_splits = args.num_splits, train_size=args.train_size, random_state=args.seed)
     # define feature selector
     rfecv = set_rfe_params(args.remove_per_step=7, min_feats=1, args.threads=4)
     
@@ -168,7 +168,7 @@ def main():
         
         # extract & write results
         
-        plot_metrics(rfecv_fit, i, X_test, y_test)
+        plot_metrics(rfecv_fit, i, X_test, y_test, outname=outname, outdir=outdir)
         
         print(f'Writing feature importances for GSS split #{i+1} to {outdir+outname}.csv ...')
         featsel_df = get_importances(rfecv_fit, i)
