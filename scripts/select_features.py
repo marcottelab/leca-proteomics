@@ -121,7 +121,11 @@ def main():
         seed = args.seed
     
     # define split strategy
+<<<<<<< HEAD
     gss = GroupShuffleSplit(n_splits=args.num_splits, train_size=float(args.train_size), random_state=args.seed)
+=======
+    gss = GroupShuffleSplit(n_splits = args.num_splits, train_size=args.train_size, random_state=args.seed)
+>>>>>>> 34a20383574397ee9f1d795b4fe573e4242463a1
     # define feature selector
     rfecv_params = set_rfe_params(step=args.remove_per_step, min_feats=1, num_threads=args.threads)
     print(rfecv_params)
@@ -161,7 +165,12 @@ def main():
         outdir = args.outdir
         
         # extract & write results
+<<<<<<< HEAD
         plot_results(rfecv_fit, i, X_test, y_test, outname, outdir)
+=======
+        
+        plot_metrics(rfecv_fit, i, X_test, y_test, outname=outname, outdir=outdir)
+>>>>>>> 34a20383574397ee9f1d795b4fe573e4242463a1
         
         print(f'Writing feature importances for GSS split #{i+1} to {outdir+outname}.csv ...')
         featsel_df = get_importances(rfecv_fit, data_cols, i)
