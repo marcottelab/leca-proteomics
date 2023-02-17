@@ -145,6 +145,7 @@ def make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=None):
             pos_ppi_dict.update({grp: cmplx})
             for ppi in cmplx:
                 final_grp_nums.append(grp)
+    
     print(f'--> (# total GS groups in data)/(# total possible GS groups) = {len(pos_ppi_dict)}/{len(gs_dict)}')
     
     print(f'[{ct}] Randomly sampling {num_neg_labels} negative PPIs from {len(obs_neg)} total observed negative PPIs ...')
