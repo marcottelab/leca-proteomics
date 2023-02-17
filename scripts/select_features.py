@@ -10,25 +10,19 @@ __license__ = "MIT"
 import pandas  as pd
 import numpy as np
 import pickle
+import argparse
+import random
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.model_selection import StratifiedKFold
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.feature_selection import RFECV
 from functools import reduce
 
-# future argparse vars, probably
-fmatfile = '/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled_traintest.pkl'
-outdir = '/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/feature_selection/'
-seed = 13
-train_size = 0.7
-num_splits = 5
-min_features_to_select = 1
-
 def load_data(fmat_file):
     
     # load data
-    print(f'Reading in {fmatfile} ...')
-    with open(fmatfile, 'rb') as handle:
+    print(f'Reading in {fmat_file} ...')
+    with open(fmat_file, 'rb') as handle:
         fmat = pickle.load(handle)
         
     # print # +/- labels
@@ -43,15 +37,14 @@ def load_data(fmat_file):
 
 def fmt_arrays(fmat, label_cols, data_cols):
 
-    # convert cols to arrays
-    print(f'Formatting arrays ...')
+    # convert df cols to arrays
     X = fmat[data_cols].to_numpy()
     y = fmat[label_cols[1]].to_numpy()
     groups = fmat[label_cols[2]].to_numpy()
     
     return(X, y, groups)
 
-def set_rfe_params(remove_per_step=7, min_feats=1, num_threads=4):
+def set_rfe_params(step=7, min_feats=1, num_threads=4, seed=None):
     
     # define model to train on
     clf = ExtraTreesClassifier(n_estimators=100, random_state=seed)
@@ -61,7 +54,7 @@ def set_rfe_params(remove_per_step=7, min_feats=1, num_threads=4):
     cv = StratifiedKFold(5)
     rfecv = RFECV(
         estimator=clf,
-        step=remove_per_step,
+        step=step,
         cv=cv,
         scoring="accuracy",
         min_features_to_select=min_feats,
@@ -73,12 +66,12 @@ def set_rfe_params(remove_per_step=7, min_feats=1, num_threads=4):
 def fit_rfe(model, fold, X_train, y_train):
     
     # run recursive feature elimination
-    rfecv.fit(X_train, y_train)
-    print(f"Optimal number of features: {rfecv.n_features_}")
+    model.fit(X_train, y_train)
+    print(f"Optimal number of features: {model.n_features_}")
     
-    return(rfecv)
+    return(model)
 
-def plot_results(rfecv_fit, fold, X_test, y_test, outdir):
+def plot_results(rfecv_fit, fold, X_test, y_test, outname, outdir):
     
     # plot results
     print(f'Generating RFECV evaluation plots ...')
@@ -106,7 +99,7 @@ def plot_results(rfecv_fit, fold, X_test, y_test, outdir):
     plt.savefig(f'{outdir+outname}_holdout-test_prcurve.png', dpi=300, transparent=True)
     print(f'Saving PR plot to {outdir+outname}_prcurve_holdout_test.png ...')
     
-def get_importances(rfecv_fit, fold):
+def get_importances(rfecv_fit, data_cols, fold):
     
     # get result table
     print(f'Extracting RFECV selected features & scores ...')
@@ -118,27 +111,29 @@ def get_importances(rfecv_fit, fold):
     sel_feats_scored['mdi'] = rfecv_fit.estimator_.feature_importances_
     sel_feats_scored = sel_feats_scored.sort_values('mdi')
     sel_feats_scored['fold'] = int(fold+1)
-    df_list.append(sel_feats_scored)
+
+    return(sel_feats_scored)
 
 def main():
     
     # define seed, if any
     if args.seed:
-        random.seed(args.seed)
+        seed = args.seed
     
     # define split strategy
-    gss = GroupShuffleSplit(n_splits = args.num_splits, train_size=args.train_size)
+    gss = GroupShuffleSplit(n_splits=args.num_splits, train_size=float(args.train_size), random_state=args.seed)
     # define feature selector
-    rfecv = set_rfe_params(args.remove_per_step=7, min_feats=1, args.threads=4)
+    rfecv_params = set_rfe_params(step=args.remove_per_step, min_feats=1, num_threads=args.threads)
+    print(rfecv_params)
     
     # load & format data
     fmat, label_cols, data_cols = load_data(args.featmat)
     X, y, groups = fmt_arrays(fmat, label_cols, data_cols)
     
     # get gss splits for each iteration
-    print(f'----- Running recursive feature elimination for {num_splits} GSS splits -----')
+    print(f'----- Running recursive feature elimination for {args.num_splits} GSS splits -----')
     fold_df_lst = []
-    for i, (test_idx, train_idx) in enumerate(gss.split(X, y, groups)):
+    for i, (train_idx, test_idx) in enumerate(gss.split(X, y, groups)):
 
         # define test/train splits
         X_train = X[train_idx]
@@ -156,10 +151,9 @@ def main():
         print(f'# test PPIs = {len(X_test)}')
         print(f' --> +/- label balance: {label_counts_test}')
         
-        print(f'Executing RFE for GSS split #{fold+1} ...')
+        print(f'Executing RFE for GSS split #{i+1} ...')
         # run rfe
-        rfecv_fit = fit_rfe(rfecv, i, X_train, y_train)
-        
+        rfecv_fit = fit_rfe(rfecv_params, i, X_train, y_train)
         
         # define output vars
         suffix = 'gssfold'+str(i+1)
@@ -167,11 +161,10 @@ def main():
         outdir = args.outdir
         
         # extract & write results
-        
-        plot_metrics(rfecv_fit, i, X_test, y_test)
+        plot_results(rfecv_fit, i, X_test, y_test, outname, outdir)
         
         print(f'Writing feature importances for GSS split #{i+1} to {outdir+outname}.csv ...')
-        featsel_df = get_importances(rfecv_fit, i)
+        featsel_df = get_importances(rfecv_fit, data_cols, i)
         featsel_df.to_csv(f'{outdir+outname}.csv', index=False)
         fold_df_lst.append(featsel_df)
 
@@ -207,16 +200,19 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--outdir", action="store", help="(Required) Path to directory to write results.")
     
     # specify number of group-shuffle-splits to test
-    parser.add_argument("--num_splits", action="store", default=5, help="(Optional) Specify number of group-shuffled train/test splits to run recursive feature elimination on (default=5).")
+    parser.add_argument("--num_splits", action="store", default=5, type=int, help="(Optional) Specify number of group-shuffled train/test splits to run recursive feature elimination on (default=5).")
     
     # specify proportion of data to train on for every GSS
-    parser.add_argument("--train_size", action="store", default=0.7, help="(Optional) Specify fraction of data to train on for every group-shuffle-split iteration (default=0.7).")
+    parser.add_argument("--train_size", action="store", type=float, default=0.7, help="(Optional) Specify fraction of data to train on for every group-shuffle-split iteration (default=0.7).")
     
     # specify number of features to eliminate per round of RFE
-    parser.add_argument("--remove_per_steps", action="store", default=1, help="(Optional) Specify number of features to remove at every step of recursive feature elimination (default=1).")
+    parser.add_argument("--remove_per_step", action="store", type=int, default=1, help="(Optional) Specify number of features to remove at every step of recursive feature elimination (default=1).")
     
     # specify number threads to give RFE
-    parser.add_argument("--threads", action="store", default=4, help="(Optional) Specify number of threads to use (default=4).")
+    parser.add_argument("--threads", action="store", type=int, default=4, help="(Optional) Specify number of threads to use (default=4).")
     
     # specify seed to make results consistent
-    parser.add_argument("--seed", action="store", default=None, help="(Optional) Specify seed to make GSS and RFECV train/test splits reproducible.")
+    parser.add_argument("--seed", action="store", type=int, default=None, help="(Optional) Specify seed to make GSS and RFECV train/test splits reproducible.")
+
+    args = parser.parse_args()
+    main()
