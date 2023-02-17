@@ -64,7 +64,7 @@ def match_group(pair, pos_ppi_dict, neg_ppi_dict):
     else:
         return(0)
 
-# label non-redunant protein complex groups
+# label non-redundant protein complex groups
 def match_spr_grp(group, super_grp_dict):
     if type(group) == list:
         return(super_grp_dict.get(group[0]))
@@ -133,11 +133,8 @@ def find_obs_labels(fmat_file, all_neg_ppis, gs_dict):
 # make label dictionaries
 def make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=None):
     
-    # specify number of negative labels to include
-    if not num_neg_labels:
-        num_neg_labels = 3*len(obs_pos)
-    
-    print(f'[{ct}] Getting complex group labels ...')
+    # label complex groups
+    print(f'[{ct}] Labeling complex groups ...')
     final_grp_nums = []
     pos_ppi_dict = dict()
     for grp, cmplx in gs_dict.items():
@@ -147,16 +144,21 @@ def make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=None):
                 final_grp_nums.append(grp)
     
     print(f'--> (# total GS groups in data)/(# total possible GS groups) = {len(pos_ppi_dict)}/{len(gs_dict)}')
-    
+
+    # specify number of negative labels to include
+    if not num_neg_labels:
+        num_neg_labels = 3*len(obs_pos)
+
     print(f'[{ct}] Randomly sampling {num_neg_labels} negative PPIs from {len(obs_neg)} total observed negative PPIs ...')
     random.shuffle(list(obs_neg))
     neg_ppis = random.sample(list(obs_neg), num_neg_labels)
-    
+    neg_grp_nums = random.sample(final_grp_nums, num_neg_labels)
+
     print(f'[{ct}] Assigning group numbers ...')
     neg_ppi_dict = dict()
-    for i in range(len(final_grp_nums)):
-        print(neg_ppis[i], '\t', final_grp_nums[i])
-        neg_ppi_dict.update({neg_ppis[i]: int(final_grp_nums[i])})
+    for i in range(len(neg_grp_nums)):
+        #print(neg_ppis[i], '\t', final_grp_nums[i])
+        neg_ppi_dict.update({neg_ppis[i]: int(neg_grp_nums[i])})
     
     print(f'[{ct}] Finished generating positive and negative PPI labels!')
     return(neg_ppi_dict, pos_ppi_dict)
@@ -212,7 +214,7 @@ def label_fmat(fmat_file, pos_dict, neg_dict):
     fmat['frozen_pair'] = [make_fset(i, drop=True) for i in fmat['ID']]
     
     t0 = time.time()
-    print(f'[{ct}] Labeling feature matrix (takes awhile) ...')
+    print(f'[{ct}] Labeling positive/negative pairs ...')
     # get all positive pairs
     pos_pairs = [pair for cmplx in list(pos_dict.values()) for pair in cmplx]
     # label pairs
@@ -221,15 +223,20 @@ def label_fmat(fmat_file, pos_dict, neg_dict):
     fmat['group'] = [match_group(i, pos_dict, neg_dict) for i in tqdm(fmat['frozen_pair'])]
     print(f'[{ct}] Total time to label {len(fmat)} rows: {time.time() - t0} seconds')
     
-    num_pos = len(fmat[(fmat['label'] == 1)])
-    num_neg = len(fmat[(fmat['label'] == -1)])
-    print(f'[{ct}] Total # positive PPIs = {num_pos}')
-    print(f'[{ct}] Total # negative PPIs = {num_neg}')
-    
     print(f'[{ct}] Generating merged complex groups ...')
     sdict = make_sprgrp_dict(fmat)
     print(f'[{ct}] Labeling non-redundant complex groups ...')
     fmat['super_group'] = [match_spr_grp(i, sdict) for i in tqdm(fmat['group'])]
+    
+
+    # output some stats
+    num_pos = len(fmat[(fmat['label'] == 1)])
+    num_neg = len(fmat[(fmat['label'] == -1)])
+    num_spr_grp = fmat['super_group'].nunique()
+    print(f'[{ct}] --> total # positive PPIs labeled = {num_pos}')
+    print(f'[{ct}] --> total # negative PPIs labeled = {num_neg}')
+    print(f'[{ct}] --> total # merged complex super groups = {num_spr_grp}')
+
     return(fmat)
 
 def format_fmat(labeled_fmat, keep_overlap_groups=False, shuffle_feats=False, shuffle_rows=False):
