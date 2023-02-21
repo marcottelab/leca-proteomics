@@ -156,7 +156,6 @@ def make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=None):
     print(f'[{ct}] Assigning group numbers ...')
     neg_ppi_dict = dict()
     for i in range(len(neg_grp_nums)):
-        #print(neg_ppis[i], '\t', final_grp_nums[i])
         neg_ppi_dict.update({neg_ppis[i]: int(neg_grp_nums[i])})
     
     print(f'[{ct}] Finished generating positive and negative PPI labels!')
