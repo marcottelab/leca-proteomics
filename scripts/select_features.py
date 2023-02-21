@@ -162,7 +162,7 @@ def main():
         outdir = args.outdir
         
         # extract & write results
-        plot_metrics(rfecv_fit, i, X_test, y_test, outname=outname, outdir=outdir)
+        plot_results(rfecv_fit, i, X_test, y_test, outname=outname, outdir=outdir)
         
         print(f'Writing feature importances for GSS split #{i+1} to {outdir+outname}.csv ...')
         featsel_df = get_importances(rfecv_fit, data_cols, i)
