@@ -426,6 +426,27 @@ concat_elut <- function(elut_list, psm_thres, outfile_prefix){
 # clustered concatenated elution profiles using morpheus:
 # https://software.broadinstitute.org/morpheus/
 
+# want to sweep clustering metrics to see which one looks best
+
+# test my own script:
+python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.filtdollo.150p.norm.ordered.elut.pkl --distance_metric euclidean --cluster_method average --output_dir ppi_ml/results/elutions/clustered/ --pickle_output --plot
+
+# generate parallelizable sweeps:
+while read metric; do echo "python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.filtdollo.150p.norm.ordered.elut.pkl --distance_metric ${metric} --cluster_method average --output_dir ppi_ml/results/elutions/clustered/test_params --plot"; done < ppi_ml/annotations/lists/distance_metrics.txt > ppi_ml/records/sweep_metrics_norm_avg_cmds.sh 
+cat ppi_ml/records/sweep_metrics_norm_avg_cmds.sh | parallel -j24
+
+for m in ward complete average single; do echo "python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.filtdollo.150p.norm.ordered.elut.pkl --distance_metric euclidean --cluster_method ${m} --output_dir ppi_ml/results/elutions/clustered/test_params/ --plot"; done> ppi_ml/records/sweep_methods_norm_avg_cmds.sh
+
+# best clustering:
+# - braycurtis
+# - correlation**
+# - jaccard 
+
+# generate heat maps for each step of filtering
+python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.150p.norm.ordered.elut.pkl --distance_metric correlation --cluster_method average --output_dir ppi_ml/results/elutions/clustered/ --pickle_output --plot
+
+python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.filtdollo.150p.norm.ordered.elut.pkl --distance_metric correlation --cluster_method average --output_dir ppi_ml/results/elutions/clustered/ --pickle_output --plot
+
 # ::::::::::::::::::::::::::::::::::::::::::
 # Gold standard PPIs (Complex Portal)
 # ::::::::::::::::::::::::::::::::::::::::::

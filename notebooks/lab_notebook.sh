@@ -1657,20 +1657,639 @@ python2 /stor/work/Marcotte/project/rmcox/LECA/scripts/msblender2elution.py --pr
 
 
 ###
-# xlink mapping coe
+# xlink mapping code
 ###
 
 https://github.com/yaviddang20/cilia_xlink_new/tree/master/results
 
 
-I7M1V2
-I7MFE5
-I7MIE6
-tetts.euNOG.diamond.mapping.2759:tr|I7MIG3|I7MIG3_TETTS KOG0959
-tetts.euNOG.diamond.mapping.2759:tr|Q22B82|Q22B82_TETTS KOG0959
-tetts.euNOG.diamond.mapping.2759:tr|Q22DP0|Q22DP0_TETTS KOG0959
-tetts.euNOG.diamond.mapping.2759:tr|Q234R9|Q234R9_TETTS KOG0959
-tetts.euNOG.diamond.mapping.2759:tr|Q240X2|Q240X2_TETTS KOG0959
-tetts.euNOG.diamond.mapping.2759:tr|Q24FK4|Q24FK4_TETTS KOG0959
-tetts.euNOG.diamond.mapping.2759:tr|W7XJC2|W7XJC2_TETTS KOG0959
-tetts.euNOG.diamond.mapping.2759:tr|W7XLL4
+### localization_ml
+
+# get quickgo annotations using their API
+curl -X GET --header 'Accept:text/tsv' 'https://www.ebi.ac.uk/QuickGO/services/annotation/downloadSearch?taxonId=3702%2C9606%2C559292%2C312017&aspect=cellular_component&qualifier=located_in' -o quickgo_annots_all.tsv  # this is missing GO term column, and for some reason capped out at 10,000 ...
+
+curl -X GET --header 'Accept:application/json' 'https://www.ebi.ac.uk/QuickGO/services/annotation/downloadSearch?proteome=%20gcrpCan&includeFields=goName&includeFields=taxonName&includeFields=name&taxonId=3702%2C9606%2C559292%2C312017&aspect=cellular_component&qualifier=located_in'
+
+curl -X GET --header 'Accept:text/tsv' 'https://www.ebi.ac.uk/QuickGO/services/annotation/downloadSearch?proteome=%20gcrpCan&includeFields=goName&includeFields=taxonName&includeFields=name&taxonId=3702%2C9606%2C559292%2C312017&aspect=cellular_component&qualifier=located_in' # error: "messages":["Annotation proteome_unsorted requires 'geneProductType_unsorted=protein' to be set."
+
+# ok, trying that:
+curl -X GET --header 'Accept:text/tsv' 'https://www.ebi.ac.uk/QuickGO/services/annotation/downloadSearch?proteome=%20gcrpCan&geneProductType_unsorted=protein&includeFields=goName&includeFields=taxonName&includeFields=name&taxonId=3702%2C9606%2C559292%2C312017&aspect=cellular_component&qualifier=located_in' # same error
+
+# another attempt with &geneProductType=protein and &downloadLimit=700000
+curl -X GET --header 'Accept:text/tsv' 'https://www.ebi.ac.uk/QuickGO/services/annotation/downloadSearch?proteome=%20gcrpCan&includeFields=goName&includeFields=taxonName&includeFields=name&taxonId=3702%2C9606%2C559292%2C312017&aspect=cellular_component&qualifier=located_in&geneProductType=protein&downloadLimit=700000'
+
+# David's output:
+ls /stor/work/Marcotte/project/dy4652/local_ml_go_sepClassifierWeights
+
+
+# ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+# Regenerate heat map w/ all data
+# ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Concatenate all elution profiles
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# had to reorder the T. brucei fractions, so need to make new concatenated elution matrix
+# also rewrote join script in python while I was at it
+
+# one for each clade
+python3 scripts/join_eluts.py --input_dir ppi_ml/results/elutions/elut_animals/ --ext mFDRpsm001.unique.elut --outfile ppi_ml/results/elutions/elut_ordered/amorphea.unique.ordered.elut
+
+python3 scripts/join_eluts.py --input_dir ppi_ml/results/elutions/elut_plants/ --ext mFDRpsm001.unique.elut --outfile ppi_ml/results/elutions/elut_ordered/viridiplantae.unique.ordered.elut
+
+python3 scripts/join_eluts.py --input_dir ppi_ml/results/elutions/elut_tsar/ --ext mFDRpsm001.unique.elut --outfile ppi_ml/results/elutions/elut_ordered/tsar.unique.ordered.elut
+
+python3 scripts/join_eluts.py --input_dir ppi_ml/results/elutions/elut_excavate/ --ext mFDRpsm001.unique.elut --outfile ppi_ml/results/elutions/elut_ordered/excavate.ordered.unique.elut
+
+# this takes about an hour for the full set
+python3 scripts/join_eluts.py --input_dir ppi_ml/results/elutions/elut_ordered/ --ext unique.elut.ordered --outfile ppi_ml/results/elutions/elut_ordered/leca.unique.ordered.elut
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Cluster concatenated elution profile
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# want to sweep clustering metrics to see which one looks best
+
+# test:
+python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.filtdollo.150p.norm.ordered.elut.pkl --distance_metric euclidean --cluster_method average --output_dir ppi_ml/results/elutions/clustered/ --pickle_output --plot
+
+# generate parallelizable sweeps:
+while read metric; do echo "python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.filtdollo.150p.norm.ordered.elut.pkl --distance_metric ${metric} --cluster_method average --output_dir ppi_ml/results/elutions/clustered/test_params --plot"; done < ppi_ml/annotations/lists/distance_metrics.txt > ppi_ml/records/sweep_metrics_norm_avg_cmds.sh 
+cat ppi_ml/records/sweep_metrics_norm_avg_cmds.sh | parallel -j24
+
+for m in ward complete average single; do echo "python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.filtdollo.150p.norm.ordered.elut.pkl --distance_metric euclidean --cluster_method ${m} --output_dir ppi_ml/results/elutions/clustered/test_params/ --plot"; done> ppi_ml/records/sweep_methods_norm_avg_cmds.sh
+
+# best clustering:
+# - braycurtis
+# - correlation**
+# - jaccard 
+
+# generate heat maps for each step of filtering
+python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.filtdollo.0p.norm.elut.ordered.pkl --distance_metric correlation --cluster_method average --output_dir ppi_ml/results/elut_clustering/ --pickle_output --plot
+
+python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.150p.norm.ordered.elut.pkl --distance_metric correlation --cluster_method average --output_dir ppi_ml/results/elut_clustering/ --pickle_output --plot
+
+python3 scripts/cluster.py --infile ppi_ml/results/elutions/pkl/leca.unique.filtdollo.150p.norm.ordered.elut.pkl --distance_metric correlation --cluster_method average --output_dir ppi_ml/results/elut_clustering/ --pickle_output --plot
+
+# -------------------------
+# -- generate sparklines --
+# -------------------------
+cd /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/sparklines
+rm /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/sparklines/*
+rm /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/sparklines/logs/*
+# full sparklines
+rm cmds/generate_sparklines_full.sh
+for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/`; do echo "Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_sparklines.R \
+-i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/${x} \
+-o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/sparklines/${x%.*} \
+--best_exp FALSE --sample_clades FALSE 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/sparklines/logs/${x%.*}.full.log"; done > cmds/generate_sparklines_full.sh
+cat cmds/generate_sparklines_full.sh | parallel -j8
+
+# best sampled experiment "--best_exp TRUE --sample_clades FALSE", "${cmplx_file%.*}.bestexp.log"
+rm cmds/generate_sparklines_bestexp.sh
+for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/`; do echo "Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_sparklines.R \
+-i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/${x} \
+-o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/sparklines/${x%.*}.best_exp \
+--best_exp TRUE --sample_clades FALSE 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/sparklines/logs/${x%.*}.best_exp.log"; done > cmds/generate_sparklines_bestexp.sh
+cat cmds/generate_sparklines_bestexp.sh | parallel -j8
+
+# sampling of clades "--best_exp TRUE --sample_clades TRUE", "${cmplx_file%.*}.best_exp.sample_clades.log"
+rm cmds/generate_sparklines_bestexp_sampleclades.sh
+for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/`; do echo "Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_sparklines.R \
+-i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/${x} \
+-o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/sparklines/${x%.*}.best_exp.sample_clades \
+--best_exp TRUE --sample_clades TRUE 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/sparklines/logs/${x%.*}.best_exp.sample_clades.log"; done > cmds/generate_sparklines_bestexp_sampleclades.sh
+cat cmds/generate_sparklines_bestexp_sampleclades.sh | parallel -j8
+
+# ------------------------
+# -- generate dot plots --
+# ------------------------
+cd /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/dotplots
+rm /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/dotplots/*
+rm /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/dotplots/logs/*
+rm cmds/generate_dotplots.sh
+for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/`; do echo "Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_phylo_dots.R -i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/${x} -o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/dotplots/${x%.*}_phyloplot 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/dotplots/logs/${x%.*}.phylodots.log"; done > cmds/generate_dotplots.sh
+cat cmds/generate_dotplots.sh | parallel -j8
+
+# ----------------------------
+# -- generate network plots --
+# ----------------------------
+cd /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/networks
+rm /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/networks/*
+rm /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/networks/logs/*
+rm cmds/generate_networks.sh
+for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/`; do echo "Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_ppi_networks.R \
+--cmplx /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/${x} \
+--scores /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/results_lj.noribo/annotatedscores_top50k.fmt.csv \
+--annotations /stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_plot_annots.csv \
+--outfile /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/networks/${x%.*}_ppigraph \
+--scan_layouts 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/networks/logs/${x%.*}.ppigraph.log"; done > cmds/generate_networks.sh
+cat cmds/generate_dotplots.sh | parallel -j8
+
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Get pep counts for each experiment
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# template
+python2 /stor/work/Marcotte/project/rmcox/leca/scripts/msblender2elution.py --prot_count_files *1 --output_filename arath_iex1.pepcount --fraction_name_from_filename --msblender_format --spectral_count_type TotalCount --pepcount
+
+# get exp info
+awk -F',' '{print $3}' leca_master_gsheet.csv | sed 's/\/project\/rmcox\/LECA\/ms\/cfms\/processed\///' | sed 's/\/mzXML//' | sed 's/\//\t/' | tail -n +2  > ms_exp_list.txt
+
+# line by line info
+while IFS=$'\t' read -r -a x; do
+    echo "species: ${x[0]} | exp: ${x[1]}"
+done < ms_exp_list.txt
+
+# pep file path
+for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/msblender/leca_level/*/*/output/*pep_count*1`; do echo $x; done
+
+# combine
+while IFS=$'\t' read -r -a x; do
+    echo "python2 /stor/work/Marcotte/project/rmcox/leca/scripts/msblender2elution.py \
+    --prot_count_files /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/msblender/leca_level/${x[0]}/${x[1]}/output/*pep_count*1 \
+    --output_filename /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/pepcounts/${x[0]}_${x[1]}.pepcount \
+    --fraction_name_from_filename \
+    --msblender_format \
+    --spectral_count_type TotalCount --pepcount"
+done < /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/meta/ms_exp_list.txt > records/get_pepcounts.sh
+
+cat records/get_pepcounts.sh | parallel -j16
+
+# make sure output is good (in other words, check if file is empty)
+for file in *.pepcount; do if [ ! -s $file ]; then echo $file; fi; done
+
+# each .pepcount: 1 col for each fraction, 1 row for each peptide; 2nd col is total counts
+# need to convert to 1 col for each experiment (total count), 1 row for each peptide
+# probs do this in python: /stor/work/Marcotte/project/rmcox/leca/notebooks/gather_pep_data.ipynb
+
+
+# need to join peptide <-> ID assignments
+# e.g., from /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/msblender/leca_level/arath/iex_1/output/AT_indark_IEX_fraction_94a_20150503.prot_list
+
+# example:
+AT_indark_IEX_fraction_94a_20150503.00090.3.VLHTLLNRSGKQLR      KOG4341
+AT_indark_IEX_fraction_94a_20150503.00097.7.KAPAERPNAKELLKHRFIKNARKSPKLLERIRERPK        KOG0201(pre=K,post=Y)
+
+# is it found in peptotals files?
+grep 'KAPAERPNAKELLKHRFIKNARKSPKLLERIRERPK' arath_peptotals.csv # nope
+grep 'APAERPNAKELLKHRFIKNARKSPKLLERIRERP' arath_peptotals.csv # nope
+grep 'VLHTLLNRSGKQLR' arath_peptotals.csv # nope
+
+# back to the drawing board ...?
+# potentially use this script I wrote forever ago...
+# /stor/work/Marcotte/project/rmcox/leca/scripts/assign_peptides.py 
+
+# new script for getting pep totals for each OG assignment:
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/get_pep_assignments.py --data_dir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/msblender/leca_level/arath/wwc_1/output/ --outfile /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/pep_assign/arath_wwc_1.pep_assign
+
+# generate commands for each experiment
+while IFS=$'\t' read -r -a x; do
+    echo "python3 /stor/work/Marcotte/project/rmcox/leca/scripts/get_pep_assignments.py \
+    --data_dir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/msblender/leca_level/${x[0]}/${x[1]}/output/ \
+    --outfile /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/pep_assign/${x[0]}_${x[1]}.pep_assign"
+done < /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/meta/ms_exp_list.txt > records/get_pep_assignments.sh
+
+cat records/get_pep_assignments.sh | parallel -j8 2>&1 | tee logs/get_pep_assignments.log
+
+# did totals for each species manually at the end of this notebook: /stor/work/Marcotte/project/rmcox/leca/notebooks/gather_prot_lists.ipynb
+
+# now make back assignment files:
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/back_assign_peptides.py --peptides /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/pep_assign_totals/dicdi_pep_assign_totals.csv --fasta /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/proteomes/dicdi.fasta --mapping /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/og_proteomes/nog_mapping/dicdi.euNOG.diamond.mapping.2759 --outfile /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/pep_assign_posthoc/dicdi_ogs.back_assign_peps
+
+# line by line info
+while IFS=$'\t' read -r -a x; do
+    echo "species: ${x[0]} | exp: ${x[1]}"
+done < ms_exp_list.txt
+
+# make command file
+while IFS=$'\t' read -r -a x; do
+    echo "python3 /stor/work/Marcotte/project/rmcox/leca/scripts/back_assign_peptides.py \
+    --peptides /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/pep_assign_totals/${x[0]}_pep_assign_totals.csv \
+    --fasta /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/proteomes/${x[0]}.fasta \
+    --mapping /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/og_proteomes/nog_mapping/${x[0]}.euNOG.diamond.mapping.2759 \
+    --outfile /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/cfms/pep_assign_posthoc/${x[0]}_ogs.back_assign_peps > logs/${x[0]}.back_assign_peps.log"
+done < /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/meta/ms_exp_list.txt > records/back_assign_peps.sh
+
+# run for each species (this takes a very, very, very long time)
+uniq records/back_assign_peps.sh | cat | parallel -j16
+
+# next step: choose sequence based on (1) 1:1 complex members, (2) OG subunit evidence, (3) subunit sequence length
+# this file is potentially helpful: /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/meta/avg_famsize_per_og
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Get CFMS and APMS score for each PPI
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# need to filter this file for paired scores:
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/featmat/featmat_humap
+
+# this file is massive; turned it into a pickled dictionary:
+python3 scripts/make_apms_dict.py # -> /project/rmcox/leca/ppi_ml/data/apms/apms_dict.pkl
+
+# performing this data munging in this notebook: /stor/work/Marcotte/project/rmcox/leca/notebooks/get_apms_scores.ipynb
+
+# top feats (/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/tpot_fitted_model.p.featureimportances):
+0,0.0331,excavate_concat.raw.150p.spearmanR.feat,rfe
+1,0.0276,plants_concat.raw.150p.spearmanR.feat,rfe
+2,0.0258,plants_concat.raw.150p.pearsonR.feat,rfe
+3,0.0243,tsar_concat.raw.150p.pearsonR.feat,rfe
+4,0.0209,animals_concat.raw.150p.pearsonR.feat,rfe
+5,0.0184,tsar_concat.raw.150p.spearmanR.feat,rfe
+6,0.016,pair_count_cilium_hygeo,rfe  # col 26; WMM gupta(?)
+7,0.0138,neg_ln_pval_youn_hygeo_gt2,rfe  # col 43; ; WMM youn
+8,0.0137,neg_ln_pval_youn_hygeo,rfe  # col 41; WMM youn
+9,0.0136,ave_apsm,rfe  # col 15; ?
+10,0.013,neg_ln_pval_treiber_hygeo_gt2,rfe  # col 47; WMM youn
+
+# min max file: /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/apms/humap/humap_ext_feats.minmax.csv
+
+
+# -------------------------------
+# -- generate apms table plots --
+# -------------------------------
+cd /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores
+rm /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores/*
+rm /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores/logs/*
+rm cmds/generate_apms_scores.sh
+for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/`; do echo "Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_scores.R -i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/${x} -o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores/${x%.*}_scores 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores/logs/${x%.*}.scores.log"; done > cmds/generate_apms_scores.sh
+cat cmds/generate_apms_scores.sh | parallel -j16
+
+# test set
+shuf -n 30 cmds/generate_apms_scores.sh > cmds/test.sh
+cat cmds/test.sh | parallel -j10
+
+# hmmmm something weird is happening with the scores
+# there are a large number of missing pairs
+# eg: PSMA4 + PSMA5 / P25789 + P28066 / KOG0178 + KOG0176
+
+# get all ids in the featmat pre-og assignment
+tail -n +2 humap2_feature_matrix_20200820.featmat | awk -F',' '{print $1}' | uniq > all_ids1.txt
+tail -n +2 humap2_feature_matrix_20200820.featmat | awk -F',' '{print $2}' | uniq > all_ids2.txt
+cat all_ids1.txt all_ids2.txt | uniq > all_ids.txt
+
+# let's get some numbers...
+wc -l all_ids.txt # 17,579,788 total ids, but a lot of them are just like '1, 2, 3, 4, 5...'
+grep 'sp\|tr' all_ids.txt | wc -l # 112,098 uniprot IDs
+
+grep 'P25789\|P28066' all_ids.txt  # but neither PSMA4 or PSMA5 are in there ...
+
+# how many ids ended up in the actual featmat?
+tail -n +2 featmat_humap | awk -F',' '{print $1}' featmat_humap > fmat_ids.txt
+tail -n +2 fmat_ids.txt | awk -F' ' '{print $1}' | uniq > fmat_ids1.txt
+tail -n +2 fmat_ids.txt | awk -F' ' '{print $2}' | uniq > fmat_ids2.txt
+cat fmat_ids1.txt fmat_ids2.txt | sort -u > all_fmat_ids.txt
+wc -l all_fmat_ids.txt # 9886
+
+# how many unique ogs?
+grep 'KOG\|ENOG' all_fmat_ids.txt | sort -u > all_fmat_ogs.txt
+wc -l all_fmat_ogs.txt # 6771 out of 20505 total possible human OGs
+
+# these units are definitely in these humap files:
+grep 'P25789\|P28066' humap2_ppis_ACC_20200821.pairsWprob
+grep 'KOG0178' humap2_ppis_ACC_20200821.eggnogIDs.pairsWprob
+grep 'KOG0176' humap2_ppis_ACC_20200821.eggnogIDs.pairsWprob
+
+# individually, the ogs are in this file:
+grep 'KOG0178\|KOG0176' humap_ext_feats_final.csv
+	# but the pair + score are not
+	grep 'KOG0178,KOG0176' humap_ext_feats_final.csv # nope
+	grep 'KOG0176,KOG0178' humap_ext_feats_final.csv # nope
+	# num pairs in this file:
+	wc -l humap_ext_feats_final.csv  # 17,516,684
+
+
+# what about this file?
+wc -l orig9k_bioplex2_hygeo_bioid_hygeo_boldt_apms_hygeo_treiber_hygeo_wgt2_youn_hygeo_trimCols_groupbyMean_ACCs.featmat # 17,516,684
+
+# these units are in this file
+grep 'P25789\|P28066' orig9k_bioplex2_hygeo_bioid_hygeo_boldt_apms_hygeo_treiber_hygeo_wgt2_youn_hygeo_trimCols_groupbyMean_ACCs.featmat
+
+# wait let's just check PSMA4
+grep 'P25789' orig9k_bioplex2_hygeo_bioid_hygeo_boldt_apms_hygeo_treiber_hygeo_wgt2_youn_hygeo_trimCols_groupbyMean_ACCs.featmat  # oh PSMA4 straight up is not in here
+
+# but the pair + score are not
+grep 'P25789,P28066' orig9k_bioplex2_hygeo_bioid_hygeo_boldt_apms_hygeo_treiber_hygeo_wgt2_youn_hygeo_trimCols_groupbyMean_ACCs.featmat  # nope
+grep 'P28066,P25789' orig9k_bioplex2_hygeo_bioid_hygeo_boldt_apms_hygeo_treiber_hygeo_wgt2_youn_hygeo_trimCols_groupbyMean_ACCs.featmat  # nope
+
+# summary:
+# kevin's humap2 probability scores file has all the relevant proteins
+# the actual featmat files are missing UniProt IDs for some number of proteins (e.g., PSMA4/P25789)
+# there's a possibility PSMA4 is in the featmat with a different ID
+# if that's true... how do I find it?
+# in a previous email chain with Kevin, we talked about ID mapping issues... he directed me to this notebook directory: https://github.com/marcottelab/protein_complex_maps/tree/humap2/protein_complex_maps/notebooks
+# and even if I fix this problem... should I regenerate my model?
+# (╯°□°)╯︵ ┻━┻
+
+# --------------------------
+# -- fix apms ID mapping --
+# --------------------------
+
+# entrez/ensembl --> uniprot
+head /stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/uniprot/EntrezToUniprot_clean.csv
+
+# i'm going to need to build in a check for non-unique pairs...
+# eg, a pair might be unique pre-ID replacement, but is now duplicate post-replacement
+# new featmat with uniprot IDs replaced:
+head /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/apms/humap/orig9k_featmat.upids.csv
+grep 'P25789' orig9k_featmat.upids.csv # wtf, still nothing
+grep 'P25789' humap2_20200820_id1s_replaced.csv # yes
+grep 'KOG0178,KOG0176' humap2_featmat_20200820.euNOGs.csv # yes
+
+# ok, so we'll probably move forward with the featmat downloaded from the website
+head /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/apms/humap/humap2_featmat_20200820.euNOGs.target_scores.group_mean.csv
+
+# wait. after regenerating the apms score tables, it looks like there is still missing data
+grep 'KOG0178' results/cmplx_files/* # 20S
+grep 'KOG0178' data/apms/clustered_og_scores.csv # ok it is there. just need to regenerate the scores again
+
+# how much did we improve?
+# old apms fmat:
+grep 'KOG\|ENOG' all_fmat_ids.txt | sort -u > all_fmat_ogs.txt
+wc -l all_fmat_ogs.txt # 6771 out of 20505 total possible human OGs
+# new apms fmat:
+tail -n +2 featmat_humap | awk -F' ' '{print $1}' | uniq > fmat_ids1_new.txt
+tail -n +2 featmat_humap | awk -F' ' '{print $2}' | uniq > fmat_ids2_new.txt
+sed -i 's/,.*//g' fmat_ids2_new.txt
+cat fmat_ids1_new.txt fmat_ids2_new.txt | sort -u > all_fmat_ids_new.txt
+wc -l all_fmat_ids_new.txt # 7598
+
+# so added 827 orthogroups (+12%);
+
+# the real question is how many protein pairs were added
+# and how many of them were gold standard
+
+cd /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores
+rm /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores/*
+rm /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores/logs/*
+rm cmds/generate_apms_scores.sh
+for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/`; do echo "Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_scores.R -i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/${x} -o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores/${x%.*}_scores 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores/logs/${x%.*}.scores.log"; done > cmds/generate_apms_scores.sh
+cat cmds/generate_apms_scores.sh | parallel -j8
+
+# ****TO DO: FIGURE THIS OUT:
+# the real question is how many protein pairs were added
+# and how many of them were gold standard
+
+# --------------------------
+# -- regenerate PPI model --
+# --    (fourth pass)     --
+# --------------------------
+
+# let's review all our features:
+* "featmat_allexps_p3c2" = 4X correlation metrics for each experiment with protein pairs with pearsons R greater than or equal to 0.3 (based on raw counts/our left-most df)
+* "featmat_allconcat" = 4X correlation metrics for all raw elution profiles concatenated (150PSMs)
+* "featmat_animals" = 4X correlation metrics for amorphea raw elution profiles concatenated (150PSMs)
+* "featmat_excavate" = 4X correlation metrics for excavate raw elution profiles concatenated (150PSMs)
+* "featmat_tsar" = 4X correlation metrics for tsar raw elution profiles concatenated (150PSMs)
+* "featmat_plants" = 4X correlation metrics for archaeplastida raw elution profiles concatenated (150PSMs)
+* "featmat_humap" = 47 APMS metrics from humap2 where IDs were converted to orthogroups and the metric became the group mean
+
+# other input files
+"_goldstandard_complexes": "/stor/work/Marcotte/project/rmcox/LECA/ms/gold_stds/all.gold.cmplx.noRibos.txt"
+"postrain": "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.train_ppis.ordered"
+"negtrain": "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/negtrain",
+"postest": "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.test_ppis.ordered",
+"negtest": "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/negtest"
+"annotation_file": "/stor/work/Marcotte/project/rmcox/LECA/ms/annotations/leca_eunog_annots.020722.tsv"
+
+# low key might re-do this without cfmsflow..
+# getting kevin's scripts:
+git clone https://github.com/marcottelab/protein_complex_maps.git
+
+# complex merging:
+python /stor/work/Marcotte/project/rmcox/programs/protein_complex_maps/protein_complex_maps/preprocessing_util/complexes/complex_merge.py --cluster_filename /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/gold_stds/all.gold.cmplx.noRibos.txt --output_filename /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/gold_stds/all.gold.cmplx.noRibos.merged.txt --complex_size_threshold 30 --merge_threshold 0.6
+
+# how many did we merge?
+wc -l *noRibos*
+	# 1499 all.gold.cmplx.noRibos.merged.txt
+	# 2508 all.gold.cmplx.noRibos.txt
+
+# mmmm
+# the feature extraction scripts actually do look kinda annoying
+# step 1/2: just need to make an elut path file for target elution matrix & edit it into the params file
+# i think i can do this in a bash script
+# note: do not add poisson reps to normalized data
+
+for exp in animals excavate tsar plants all150p; do
+	new_name=cfmsflow_${exp}_norm
+	git clone git@github.com:marcottelab/cfmsflow.git
+	mv cfmsflow ${new_name}
+done
+
+for exp in animals excavate tsar plants all150p; do
+	cd cfmsflow_${exp}_norm
+	../nextflow main.nf -params-file generate_params.json --entrypoint 1 --exitpoint 2
+	file=${exp}_norm_eluts_path.txt
+	sed -i '/"input_elution_pattern": "",/d' parameters.json
+	sed -i "s/\\\"input_elution_file\\\": \\\"\\\",/\\\"input_elution_file\\\": \\\"\/stor\/work\/Marcotte\/project\/rmcox\/programs\/data4cfmsflow\/elutions\/elut_paths\/${file}\\\",/" parameters.json
+	cd ../
+done
+
+for exp in animals excavate tsar plants all150p; do
+	echo "${exp}:"
+	cat cfmsflow_${exp}_norm/parameters.json
+	echo ""
+done
+
+for exp in animals excavate tsar plants all150p; do
+	echo "cd cfmsflow_${exp}_norm && ../nextflow main.nf -params-file parameters.json"
+done > get_normalized_feats.cmds
+cat get_normalized_feats.cmds | parallel -j5
+
+# permissions error again
+# try symlinking the data into the same dir:
+ln -s /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/elutions/ .
+
+# regenerate elut path:
+for exp in animals excavate tsar plants all150p; do
+	cd cfmsflow_${exp}_norm
+	../nextflow main.nf -params-file generate_params.json --entrypoint 1 --exitpoint 2
+	file=${exp}_norm_eluts_path.txt
+	sed -i '/"input_elution_pattern": "",/d' parameters.json
+	sed -i "s/\\\"input_elution_file\\\": \\\"\\\",/\\\"input_elution_file\\\": \\\"\/stor\/work\/Marcotte\/project\/rmcox\/programs\/data4cfmsflow\/elutions\/elut_paths\/${file}\\\",/" parameters.json
+	cd ../
+done
+
+# still didn't work
+# (╯°□°)╯︵ ┻━┻
+
+# calculate pearsonR
+python /indocker_repos/protein_complex_maps/protein_complex_maps/features/ExtractFeatures/canned_scripts/extract_features.py --format csv --normalize row_max -f pearsonR -o excavate.unique.norm.ordered.pearsonR.feat excavate.unique.norm.ordered.elut -r poisson_noise -i 0
+# calculate braycurtis
+python /indocker_repos/protein_complex_maps/protein_complex_maps/features/ExtractFeatures/canned_scripts/extract_features.py --format csv --normalize row_max -f braycurtis -o excavate.unique.norm.ordered.braycurtis.feat excavate.unique.norm.ordered.elut
+
+# from protein_complex_maps:
+python protein_complex_maps/protein_complex_maps/features/ExtractFeatures/canned_scripts/extract_features.py
+# this error --> ImportError: No module named protein_complex_maps.features.ExtractFeatures.Features
+# (╯°□°)╯︵ ┻━┻
+
+# ok it works when i move it up to the right level
+# claire must have messed with this when she made the nextflow pipeline
+# cool cool cool
+python /stor/work/Marcotte/project/rmcox/programs/protein_complex_maps/extract_features.py --help
+
+# template
+# feats: pearsonR, spearmanR, euclidean, braycurtis, sum_difference, spearmanR_weighted
+python /stor/work/Marcotte/project/rmcox/programs/protein_complex_maps/extract_features.py ${fmat} --format csv --feature ${feat} --as_pickle
+
+# test; this works
+python /stor/work/Marcotte/project/rmcox/programs/protein_complex_maps/extract_features.py ../elutions/elut_ordered/leca.unique.filtdollo.150p.norm.ordered.elut --format csv --feature pearsonR --outfile all.norm.150p.pearsonR --as_pickle
+
+for x in pearsonR spearmanR euclidean braycurtis covariance spearmanR_weighted; do
+	echo "python /stor/work/Marcotte/project/rmcox/programs/protein_complex_maps/extract_features.py ../elutions/elut_ordered/leca.unique.filtdollo.150p.norm.ordered.elut --format csv --feature ${x} --outfile all.norm.150p.${x}.feat"
+done > cmds/extract_feats_all.sh
+cat cmds/extract_feats_all.sh  | parallel -j3
+
+# for the rest of the clades
+for x in amorphea excavate tsar viridiplantae; do for y in pearsonR spearmanR euclidean braycurtis covariance spearmanR_weighted; do echo $x $y; done; done > cmds/explist_clades.txt
+
+# had to edit extract_features.py to put in a manually supplied outfile argument
+while IFS= read line; do
+	line=`echo $line | perl -pe '~s|\r?\n||' `
+	code=`echo "$line" | awk '{print $1}'`
+	feat=`echo "$line" | awk '{print $2}'`
+	rootDir="/stor/work/Marcotte/project/rmcox"
+	scriptDir="programs/protein_complex_maps"
+	elutionDir="leca/ppi_ml/data/elutions/elut_ordered"
+	featDir="leca/ppi_ml/data/calc_feats"
+	infile="${code}.unique.filtdollo.norm.ordered.elut"
+	outfile="${code}.filtdollo.norm.150p.${feat}.feat"
+	cmd="python $rootDir/$scriptDir/extract_features.py"
+	cmd="$cmd $rootDir/$elutionDir/$infile --format csv"
+	cmd="$cmd --outfile $rootDir/$featDir/$outfile"
+	cmd="$cmd --feature $feat"
+	echo $cmd
+done > cmds/extract_feats_clades.cmds < cmds/explist_clades.txt
+cat cmds/extract_feats_clades.cmds | parallel -j8
+
+# keep this in mind, since i'm doing this manually:
+# (from cfmsflow modules)
+	# if (corr == "euclidean" || corr == "braycurtis")
+	#python ${params.protein_complex_maps_dir}/protein_complex_maps/features/normalize_features.py --input_feature_matrix $feat --output_filename ${feat}.rescaled --features $corr --min 0 --sep , --inverse
+# eg eucl & brays require normalization (was done automatically on raw feats)
+
+# this is theoreically the next step?
+python ${params.protein_complex_maps_dir}/protein_complex_maps/features/alphabetize_pairs_chunks.py --feature_pairs $feat --outfile ${feat}.ordered --sep $sep --chunksize 1000000
+
+# but the feats look unique to me? either way, i'll join them together use frozen sets so i guess it doesn't matter
+
+# this is how kevin did it:
+python ${params.protein_complex_maps_dir}/protein_complex_maps/features/build_feature_matrix.py --input_pairs_files $features --store_interval 10 --output_file featmat --sep ','
+
+# followed by:
+python ${params.protein_complex_maps_dir}/protein_complex_maps/features/add_label_chunks.py --input_feature_matrix $featmat --input_positives $positives --input_negatives $negatives --sep , --ppi_sep ' ' --id_column ID --output_file featmat_labeled --fillna 0 --id_sep ' ' --chunksize 100000
+
+# kevin's labeling script
+protein_complex_maps/preprocessing_util/complexes/split_complexes.py
+
+### how i'm actually going to do it:
+
+# pickle feats
+for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/features/`; do echo "python3 /stor/work/Marcotte/project/rmcox/leca/scripts/make_pkl.py -i ${x}; done" > pickle_feat_files.sh
+
+cat pickle_feat_files.sh | parallel -j16
+
+# build fmat
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/build_featmat.py --directory /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/features/ --pickle --left_join_file featmat_allexps_p3c2.pkl --outfile_name /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat
+
+# label fmat
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/label_featmat.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat.pkl --gold_std_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/gold_stds/all.gold.cmplx.noRibos.merged.txt --outfile_name /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled --seed 13 --shuffle_feats
+
+# running TPOT:
+python /indocker_repos/run_TPOT/train_TPOT.py --training_data featmat_labeled1 --outfile pipeline.py --template Selector-Classifier --selector_subset $SELECTORS_FORMATTED --classifier_subset $CLASSIFIERS_FORMATTED --id_cols 0 --n_jobs 20 --generations 10 --population_size 20 --labels -1 1 --temp_dir auto --groupcol traincomplexgroups --max_features_to_select 50
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# go ahead and run my featmat through cfmsflow
+# template to copy a working cfmsflow directory:
+rsync -av --progress sourcefolder /destinationfolder --exclude thefoldertoexclude --exclude anotherfoldertoexclud
+
+rsync -av --progress /stor/work/Marcotte/project/rmcox/programs/cfmsflow_010222 /stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623 --exclude output --exclude work
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# cfmsflow - step 3
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# featmat path:
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_final
+
+# gold std path:
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/gold_stds/all.gold.cmplx.noRibos.txt
+
+# run step 3:
+../nextflow main.nf -params-file parameters3.json
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# cfmsflow - step 4
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# existing featmat:
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_final
+
+# labeled featmat:
+/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/featmat_labeled
+
+# train/test paths:
+/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/goldstandard_filt.neg_test_ppis.ordered
+
+/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/goldstandard_filt.neg_train_ppis.ordered
+
+/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/goldstandard_filt.test_ppis.ordered
+
+/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/goldstandard_filt.train_ppis.ordered
+
+# CV groups:
+/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/traincomplexgroups
+
+# run step 4:
+../nextflow main.nf -params-file parameters4.json
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# cfmsflow - step 5
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# scored interactions:
+/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/scored_interactions
+
+# annotation file:
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_human-arath_annotated.tsv
+
+# elution file:
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/elutions/leca_euks_elut.filtdollo.filt150p.raw.noheaders.csv
+
+# run step 5:
+../nextflow main.nf -params-file parameters5.json
+
+# ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+# rerun with test/train split from first run
+# ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# cfmsflow - step 4
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# train/test paths:
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.train_ppis.ordered
+
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.neg_train_ppis.ordered
+
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.test_ppis.ordered
+
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.train_ppis.ordered
+
+# groups:
+/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/traincomplexgroups
+
+# run step 4:
+../nextflow main.nf -params-file parameters4_oldTTsplit.json
+
+#
+"postrain": "/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.train_ppis.ordered",
+"negtrain": "/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.neg_train_ppis.ordered",
+"postest": "/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.test_ppis.ordered",
+"negtest": "/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.neg_test_ppis.ordered",
+
+ls /stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/featmat_labeled
