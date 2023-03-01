@@ -106,8 +106,8 @@ def get_importances(rfecv_fit, data_cols, fold):
     results = pd.DataFrame({'feature':data_cols, 'rank':rfecv_fit.ranking_, 'support':rfecv_fit.support_})
     sel_feats = results[results['support'] == True]
     sel_feats_scored = sel_feats.head(rfecv_fit.n_features_)
-    sel_feats_scored.drop(['support'], axis=1, inplace=True)
-    sel_feats_scored.drop(['rank'], axis=1, inplace=True)
+    sel_feats_scored = sel_feats_scored.drop(['support'], axis=1)
+    sel_feats_scored = sel_feats_scored.drop(['rank'], axis=1)
     sel_feats_scored['mdi'] = rfecv_fit.estimator_.feature_importances_
     sel_feats_scored = sel_feats_scored.sort_values('mdi')
     sel_feats_scored['fold'] = int(fold+1)
