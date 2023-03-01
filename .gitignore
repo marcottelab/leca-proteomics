@@ -1,12 +1,10 @@
-# python things
+# workflow-specific things to ignore, these are common for R and Python (see here for language-specific templates: https://github.com/github/gitignore):
 .ipynb_checkpoints
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-
-# R things
 .Rhistory
 .Rapp.history
 .RData
@@ -14,4 +12,10 @@ __pycache__/
 *.utf8.md
 *.knit.md
 
-# other things
+# add files/dirs with big files:
+dollo_qfo/
+human_disease/
+misc/
+ppi_ml/
+xlink/
+localization_ml/

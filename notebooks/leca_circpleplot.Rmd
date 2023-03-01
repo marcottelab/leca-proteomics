@@ -1,0 +1,286 @@
+---
+title: "leca_circleplot"
+author: "Rachael M. Cox"
+date: "3/22/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(network)
+library(igraph)
+library(tidygraph)
+library(ggraph)
+theme_set(theme_bw(base_size = 12))
+palette_pretty <- c("#0072B2","#E69F00","#009E24","#FF0000", "#5530AA")
+## the custom function using Color Brewer
+cols_f <- colorRampPalette(RColorBrewer::brewer.pal(8, 'Spectral'))
+spectral <- as.vector(cols_f(8))
+
+workdir <- "/stor/work/Marcotte/project/rmcox/leca/"
+```
+
+## Load data
+
+```{r}
+# clusters & complexes
+clst_annot_file <- paste0(workdir, "ppi_ml/results/ppi_clustering/leca_clustering_cmplx_annots_011023.csv") 
+
+clst_annot <- read_csv(clst_annot_file) %>%
+  mutate(human_family_size = str_count(human_gene_names_primary, ',')+1) %>%
+  mutate(human_family_size = ifelse(is.na(human_family_size), 0, human_family_size)) %>% 
+  mutate(human_genes_fmt = str_replace(human_gene_names_primary, "^([^,]*,[^,]*),.*", "\\1 ...")) %>%
+  mutate(human_genes_fmt = str_replace(human_genes_fmt, ", ", "\n")) %>%
+  mutate(genes_fmt = ifelse(human_family_size != 0 & human_family_size <= 5, human_genes_fmt, ID)) %>% 
+  select(ID, human_gene_names_primary, human_genes_fmt, human_family_size, genes_fmt,
+         matches("cut_*"), notes, granulated_cmplx_name, characterization_status)
+```
+
+## Data exploration
+
+#### Influence of big orthogroups
+A significant portion of the conserved interactome is based on orthogrouped peptide measurements. Some of these orthogroup are massive families, potentially skewing interpretation of the interaction results. The data exploration below attempts to determine if and how we should flag it.
+
+```{r}
+# summary stats
+summary(clst_annot$human_family_size)
+
+# manual counts
+levels = c("0", "1", "2", "3", "4", "5", ">=6")
+clst_annot_exp <- clst_annot %>%
+  mutate(family_size_binned = ifelse(human_family_size >= 6, ">=6", as.character(human_family_size)))
+# lock in var order
+clst_annot_exp$family_size_binned <- factor(clst_annot_exp$family_size_binned, levels = levels)
+
+# distribution of human family sizes per orthogroup
+ggplot(clst_annot_exp, aes(x = human_family_size)) +
+  geom_histogram(binwidth = 1) +
+  labs(x = "Human proteins per orthogroup")
+
+# binned counts (most useful I think)
+ggplot(clst_annot_exp, aes(x = family_size_binned)) +
+  geom_bar() +
+  geom_text(stat = "count", aes(label=..count..), vjust = -0.25) +
+  labs(x = "Human proteins per orthogroup")
+```
+
+Approximately 10% (257/2778) of high-scoring LECA orthogroups represent the measurement of large families (>=6 proteins, in humans at least). **Might be worth generating the # of proteins per orthogroup for all involved species and getting an average.**
+
+#### Complex annotation status
+
+Manual labeling of PPI characterization status is in the works; the code below indicates this progress:
+
+```{r}
+clst_char <- clst_annot %>%
+  group_by(characterization_status) %>% 
+  tally() %>%
+  arrange(desc(n))  # 01/10/23: still 1373 NAs out of 2778 
+
+clst_cmplx <- clst_annot %>%
+  group_by(granulated_cmplx_name) %>% 
+  tally() %>%
+  arrange(desc(n))
+```
+
+## Prep data for circle plot
+
+```{r}
+# cmplx labels
+cmplx_labels <- c("60S cytosolic large ribosomal subunit", "40S cytosolic small ribosomal subunit", "Nuclear pore complex", "Mitochondrial respiratory chain complex I", "IFT-B complex", "IFT-A complex", "19S Proteasome", "26S Proteasome complex", "CCT complex", "ESCRT-III complex", "Exosome complex", "COP9 signalosome complex", "TRAPP complex", "Arp2/3 protein complex", "COPI vesicle coat complex")
+
+# get cut cols
+cuts <- names(clst_annot[grepl("cut", names(clst_annot))])
+cuts_sel <- cuts[c(2,4,6)]
+
+# filter data
+pdf <- clst_annot %>%
+  filter(!is.na(characterization_status)) %>%
+  mutate(characterization_status_fmt = case_when(characterization_status == "Known" ~ "Known interactions",
+                                             characterization_status == "Novel member" ~ "Novel interaction partner",
+                                             characterization_status == "Uncharacterized" ~ "Uncharacterized complex"))
+```
+
+Functions:
+```{r}
+format_clst <- function(clusters, level_vect){
+  # get clusters greater than one big
+  highest_level <- level_vect[1]
+  clusters_filt <- clusters %>%
+    add_count(!!sym(highest_level)) %>%
+    filter(n > 1) %>%
+    select(-n)
+  # make each cluster number unique by adding on the header
+  clusters_uniqued_long <- clusters_filt %>%
+    gather(clusterset, clusternum, -ID) %>%
+    mutate(clusterid = paste0(clusternum, clusterset)) %>% 
+    select(-clusternum)
+  return(clusters_uniqued_long)
+}
+
+make_edge <- function(n, clu, cols){
+    startcol = cols[n]
+    endcol = cols[n + 1]
+    clu %>% select(!!startcol, !!endcol) %>% rename(from = !!startcol, to = !!endcol)
+}
+
+graph_clst <- function(clusters_uniqued_long, level_vect) {
+  # make wide
+  clusters_uniqued <- clusters_uniqued_long %>%
+    spread(clusterset, clusterid)
+  # set origin  
+  clusters_uniqued$link <- "origin"
+  # get origin col, cut cols, and ID col
+  clusters_uniqued_sel <- clusters_uniqued %>%
+    select(link, {{ level_vect }}, ID)
+  # get col names
+  cols <- names(clusters_uniqued_sel)
+  # generate edges
+  edges <-
+    map_df(seq(1, length(cols) - 1), make_edge, clusters_uniqued_sel, cols) %>%
+    unique()
+  # generate graph
+  mygraph2 <- as_tbl_graph(edges)
+  return(mygraph2)
+}
+
+#no bordering
+# Idea of this is to label only largest sets that label applies to 
+# Also set that complex name as the label value for one member of largest set that that label applies to
+format_labels <- function(clusters, annot, level_vect){
+  
+  # First get only selected clustering levels
+  clusterid_annot <- clusters %>% left_join(annot, by = "ID") %>%
+    filter(clusterset %in% {{ level_vect }}) %>%
+    select(clusterset, clusterid, complex_label) %>%
+  
+    # Count numbers of members per cluster set
+    group_by(clusterid) %>%
+      mutate(unique_types = n_distinct(complex_label)) %>%
+      add_count(clusterset, complex_label, sort = TRUE) %>%
+    
+    group_by(complex_label) %>%
+      filter(unique_types ==  min(unique_types)) %>%
+      mutate(label = case_when(row_number() == 1 ~ complex_label)) %>%
+      filter(!is.na(label))  %>%
+    group_by(clusterid) %>%
+      summarize(label = paste(unique(label), collapse = ', ')) %>% 
+    ungroup()
+
+  return(clusterid_annot)
+}
+
+annotate_graph <- function(graph, clusterid_annot, annot){
+  graph_annot <- graph %>% activate('nodes') %>%
+    left_join(clusterid_annot, by = c("name"  = "clusterid")) %>%
+    left_join(annot, by = c("name"  = "ID")) 
+  return(graph_annot)
+
+}
+
+plot_graph <- function(graph, labels = TRUE){
+
+  circlepack_plants_highlight <- ggraph(graph, layout = 'circlepack') + 
+    geom_node_circle(aes(  fill = set), size = 0.1, color = "grey50") +
+    scale_fill_manual(values = c(palette[4],  "yellow"), na.value = "white") + #light green "#c5f7d1
+    theme(legend.key.size = unit(0.2, "lines"),
+          legend.position = "bottom",
+          legend.text = element_text(size = 4)) +
+    theme_void() + 
+    NULL
+
+    if(labels == TRUE){
+      # label nodes
+      circlepack_plants_highlight <- circlepack_plants_highlight + 
+        geom_node_text( aes( label= label), repel = TRUE,  segment.color = "grey40", size = 2, force = 0.5 ) +
+        NULL
+    }
+
+  circlepack_plants_highlight_nolegend <- circlepack_plants_highlight + 
+    theme(legend.position="FALSE")  
+  return(circlepack_plants_highlight_nolegend)
+}
+
+circlepack_fxn <- function(graph_annot, seed){
+
+ 
+  set.seed(seed = seed)
+  base_layout_circlepack <- ggraph(graph_annot, layout = 'circlepack')
+
+  base_layout_circlepack_format <- base_layout_circlepack +
+    geom_node_circle(aes(fill = characterization_status_fmt)) +  # node fill variable
+    scale_fill_manual(values = c("#E64B35", "#4DBBD5", "#F0E442", "#3C5488", "#00A087"), 
+                      na.translate=F) + # node fill colors
+    scale_color_manual(values = c("grey50") ,na.value = "grey50") +
+    scale_size_manual(values = c(2), na.value = 0.5) + # set carefully; big nums freeze RStudio
+    theme_void() +
+    theme(legend.title = element_blank(),
+          legend.position = "top") +
+    geom_node_text(aes(label = genes_fmt), size = 1.5, color = "black")
+    
+
+  #circlepackplot_clusterlabel <- base_layout_circlepack_format +
+      #geom_node_text(aes(label= label), size = 1.5, color = "#400080") + #label is complex label
+      #geom_node_text(aes(label= arath_genename), size = 1.5, color = "blue") + #arath_genename is labeling node by gene name
+        #theme(legend.position="FALSE")+
+        #NULL
+  return(base_layout_circlepack_format)
+}
+```
+
+## Make circle plot
+
+```{r}
+# format chosen clusters
+clusters_uniqued_long <- format_clst(pdf, cuts_sel)
+
+# generate graph objct
+graph <- graph_clst(clusters_uniqued_long, cuts_sel)
+
+# join labels
+graph <- graph %>% activate("nodes") %>%
+  left_join(pdf, by = c("name" = "ID")) %>%
+  filter(!is.na(characterization_status))
+
+# plot graph object
+circlepack_fxn(graph, 13)
+
+# save output
+figure_dir <- paste0(workdir, "ppi_ml/figures/")
+ggsave(paste0(figure_dir, "cplot_annot-status_011023.pdf"), device = "pdf", 
+              width = 6, height = 6, units = "in")
+ggsave(paste0(figure_dir, "cplot_annot-status_011023.png"), device = "png", 
+              width = 6, height = 6, units = "in")
+```
+
+## EXAMPLE CODE
+
+```{r}
+# # example input file
+# momo_example <- read_csv('/stor/work/Marcotte/project/Momo/rbc_figures/circlepack/category_annotated_modified_justrbc.csv') 
+# 
+# #label each circle with gene names
+# momo_label_ex <- read_csv("/stor/work/Marcotte/project/Momo/diffusion_clustering/human_proteome_uiprotID_genename.csv")
+# momo_label_ex <- momo_label_ex %>% 
+#   group_by(ID) %>% 
+#   mutate(num=n()) %>% 
+#   ungroup() %>% 
+#   filter(num==1)
+# 
+# # make border annotations
+# momo_bordering_ex  <- read_csv('/stor/work/Marcotte/project/Momo/rbc_figures/circlepack/category_annotated_modified_justrbc_bordering_oxidoreductase.csv')
+# 
+# # pick clst cols
+# sel <- names(momo_example)[c(3,5,8)] 
+# 
+# clusters_uniqued_long <- format_clusters(momo_example, sel)
+# 
+# graph <- make_graph_clust(clusters_uniqued_long, sel)
+# 
+# graph <- graph %>% activate("nodes") %>%
+#   left_join(momo_label_ex, by = c("name" = "ID"))%>%
+#   left_join(momo_bordering_ex, by = c("name"  = "ID")) 
+# circlepack_fxn(graph, 68)
+# 
+# # save output
+# ggsave("/stor/work/Marcotte/project/Momo/rbc_figures/circlepack/circlepackplot_category_cut358_rbconly_4cats_cb_friendly.pdf", device = "pdf", width = 6, height = 6, units = "in")
+```

@@ -1,0 +1,55 @@
+---
+title: "PPI Network Plots"
+output: html_document
+date: "2022-09-23"
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(network)
+library(igraph)
+library(tidygraph)
+library(ggraph)
+theme_set(theme_bw(base_size = 12))
+palette_pretty <- c("#0072B2","#E69F00","#009E24","#FF0000", "#5530AA")
+## the custom function using Color Brewer
+cols_f <- colorRampPalette(RColorBrewer::brewer.pal(8, 'Spectral'))
+spectral <- as.vector(cols_f(8))
+
+workdir <- "/stor/work/Marcotte/project/rmcox/"
+```
+
+## Title
+
+```{r}
+```
+
+## Global data
+
+```{r}
+# scores & complexes
+ppi_scores <- read_tsv(file.path(workdir, "LECA_archive/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/scored_interactions_top30k_fdr15"))
+clustering <- read_csv(file.path(workdir, "LECA_archive/ms/cfms2/cfmsflow_012022/results_lj.noribo/clustering_fdr15_noribo.fmt.csv"))
+
+# test train status
+testfile <- "/stor/work/Marcotte/project/rmcox/LECA_archive/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.test_ppis.ordered"
+trainfile <- "/stor/work/Marcotte/project/rmcox/LECA_archive/ms/cfms2/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.train_ppis.ordered"
+
+test <- readr::read_csv(testfile, col_names = F) %>%
+  mutate(set = "test") %>%
+  rename(ID = X1)
+train <- readr::read_csv(trainfile, col_names = F) %>%
+  mutate(set = "train") %>%
+  rename(ID = X1)
+
+test_train <- rbind(test, train)
+
+# combine with cfms score
+ppi_scores <- left_join(ppi_scores, test_train)
+ppi_scores[is.na(ppi_scores)] <- "predicted"
+```
+
+## Title
+
+```{r}
+```
