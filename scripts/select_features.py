@@ -90,14 +90,14 @@ def plot_results(rfecv_fit, fold, X_test, y_test, outname, outdir):
     )
     
     plt.title(f"Recursive feature elimination\nwith correlated features (fold #{fold+1})")
-    print(f'Saving mean accuracy plot to {outdir+outname}_nfeats-vs-acc_internal_test.png ...')
-    plt.savefig(f'{outdir+outname}_cv-test_nfeats-vs-acc.png', dpi=300, transparent=True)
+    print(f'Saving mean accuracy plot to {outdir+outname}_nfeats-vs-acc_internal_cvtest.png ...')
+    plt.savefig(f'{outdir+outname}_nfeats-vs-acc_internal_cvtest.png', dpi=300, transparent=True)
     
     # PR curve
     from sklearn.metrics import PrecisionRecallDisplay
     PrecisionRecallDisplay.from_estimator(rfecv_fit, X_test, y_test)
-    plt.savefig(f'{outdir+outname}_holdout-test_prcurve.png', dpi=300, transparent=True)
     print(f'Saving PR plot to {outdir+outname}_prcurve_holdout_test.png ...')
+    plt.savefig(f'{outdir+outname}_prcurve_holdout_test.png', dpi=300, transparent=True)
     
 def get_importances(rfecv_fit, data_cols, fold):
     
