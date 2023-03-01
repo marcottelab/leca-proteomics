@@ -132,10 +132,17 @@ def main():
     X, y, groups = fmt_arrays(fmat, label_cols, data_cols)
     
     # get gss splits for each iteration
+    print()
     print(f'----- Running recursive feature elimination for {args.num_splits} GSS splits -----')
+    print()
+    
     fold_df_lst = []
+    optimal_n_dict = dict()
+    
     for i, (train_idx, test_idx) in enumerate(gss.split(X, y, groups)):
-
+        
+        print(f'Executing RFE for GSS split #{i+1} ...')
+        
         # define test/train splits
         X_train = X[train_idx]
         y_train = y[train_idx]
@@ -152,7 +159,6 @@ def main():
         print(f'# test PPIs = {len(X_test)}')
         print(f' --> +/- label balance: {label_counts_test}')
         
-        print(f'Executing RFE for GSS split #{i+1} ...')
         # run rfe
         rfecv_fit = fit_rfe(rfecv_params, i, X_train, y_train)
         
@@ -167,7 +173,11 @@ def main():
         print(f'Writing feature importances for GSS split #{i+1} to {outdir+outname}.csv ...')
         featsel_df = get_importances(rfecv_fit, data_cols, i)
         featsel_df.to_csv(f'{outdir+outname}.csv', index=False)
+        
+        fold_n = len(featsel_df)
+        optimal_n_dict.update({int(i): int(fold_n)})
         fold_df_lst.append(featsel_df)
+        print()
 
     print(f'Getting selected feature importances & summary stats across all folds ...')
     all_res = pd.concat(fold_df_lst)
@@ -181,13 +191,20 @@ def main():
                .sort_values(['counts', 'mean_mdi'], ascending=[False, False])
                .reset_index()
               )
-    feat_intxn = agg_res[agg_res['counts'] == num_splits]
+    feat_intxn = agg_res[agg_res['counts'] == args.num_splits]
+    
+    # get & format results for optimal # of features
+    all_n_feats = list(optimal_n_dict.values())
+    avg_n_feats = sum(all_n_feats)/len(all_n_feats)
+    optimal_n_dict.update({'avg': avg_n_feats})
+    opt_n_df = pd.DataFrame.from_dict(optimal_n_dict, columns=['fold', 'num_optimal_features'])
+    
     print(f'# common features: {len(feat_intxn)}')
+    print(f'# optimal features averaged across all folds: {avg_n_feats}')
     print(f'Writing results to {outdir} ...')
-    agg_res.to_csv(f'{out_dir}featsel_xtrees_allres.csv', index=False)
-    feat_intxn.to_csv(f'{out_dir}featsel_xtrees_intxn.csv', index=False)
-    
-    
+    agg_res.to_csv(f'{outdir}featsel_xtrees_allres.csv', index=False)
+    feat_intxn.to_csv(f'{outdir}featsel_xtrees_intxn.csv', index=False)
+    opt_n_df.to_csv(f'{outdir}featsel_xtrees_optimal_num.csv', index=False)
 
 """ When executed from the command line: """
 if __name__ == "__main__":
