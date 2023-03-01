@@ -85,11 +85,19 @@ def main():
         
         # PR curve
         _, ax = plt.subplots(figsize=(7, 8))
-        pr_plot=PrecisionRecallDisplay.from_estimator(pipeline_opt, X_test, y_test)
-        pr_plot.plot(ax=ax, name=f"Test (split #{i+1})", color="blue")
-        pr_plot=PrecisionRecallDisplay.from_estimator(pipeline_opt, X_train, y_train)
-        pr_plot.plot(ax=ax, name=f"Train (split #{i+1})", color="yellow")
-        
+        try:
+            pr_plot=PrecisionRecallDisplay.from_estimator(pipeline_opt, X_test, y_test)
+            pr_plot.plot(ax=ax, name=f"Test (split #{i+1})", color="blue")
+            pr_plot=PrecisionRecallDisplay.from_estimator(pipeline_opt, X_train, y_train)
+            pr_plot.plot(ax=ax, name=f"Train (split #{i+1})", color="yellow")
+        except:
+            y_pred_test = pipeline_opt.predict_proba(X_test)[:, 1]
+            y_pred_train = pipeline_opt.predict_proba(X_train)[:, 1]
+            pr_plot=PrecisionRecallDisplay.from_predictions(y_test, y_pred_test)
+            pr_plot.plot(ax=ax, name=f"Test (split #{i+1})", color="blue")
+            pr_plot=PrecisionRecallDisplay.from_predictions(y_train, y_pred_train)
+            pr_plot.plot(ax=ax, name=f"Train (split #{i+1})", color="yellow")
+            
         print(f"Writing results to {outfile+'_'+str(i+1)} ...")
         plt.savefig(f"{outfile+'_'+str(i+1)}_prcurve.png", dpi=300, transparent=True)
         pipeline_opt.export(outfile+'_'+str(i+1))

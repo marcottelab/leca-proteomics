@@ -21,7 +21,7 @@ from functools import reduce
 def load_data(fmat_file):
     
     # load data
-    print(f'Reading in {fmat_file} ...')
+    print(f'Reading in {fmat_file} ...\n')
     with open(fmat_file, 'rb') as handle:
         fmat = pickle.load(handle)
         
@@ -175,7 +175,7 @@ def main():
         featsel_df.to_csv(f'{outdir+outname}.csv', index=False)
         
         fold_n = len(featsel_df)
-        optimal_n_dict.update({int(i): int(fold_n)})
+        optimal_n_dict.update({int(i+1): int(fold_n)})
         fold_df_lst.append(featsel_df)
         print()
 
@@ -197,7 +197,7 @@ def main():
     all_n_feats = list(optimal_n_dict.values())
     avg_n_feats = sum(all_n_feats)/len(all_n_feats)
     optimal_n_dict.update({'avg': avg_n_feats})
-    opt_n_df = pd.DataFrame.from_dict(optimal_n_dict, columns=['fold', 'num_optimal_features'])
+    opt_n_df = pd.DataFrame(list(optimal_n_dict.items()), columns=['fold', 'num_optimal_features'])
     
     print(f'# common features: {len(feat_intxn)}')
     print(f'# optimal features averaged across all folds: {avg_n_feats}')
