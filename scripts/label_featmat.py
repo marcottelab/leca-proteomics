@@ -78,7 +78,6 @@ Functions for making positive, negative, & group label dictionaries:
 
 # get gold standard ppis
 def make_gs_dict(gs_file):
-    print(f'[{ct}] Generating grouped positive PPI labels from gold standard complexes ...')
     gs_dict = dict()
     group_no = 1
     dupes = []
@@ -87,6 +86,12 @@ def make_gs_dict(gs_file):
         for p in ppis:
             ogs = p.split(' ')
             fsets = [frozenset({i, j}) for i,j in list(combinations(ogs, 2))]
+            
+            # make sure PPI combinations are behaving as expected
+            num_prots = len(ogs)
+            expected_ppi_number = (num_prots*(num_prots-1))/2
+            assert expected_ppi_number == len(fsets), "Problem with gold standard complexes; make sure each complex contains unique protein IDs (no repeated subunits)."
+            
             gs_dict.update({int(group_no): fsets})
             group_no += 1
     return(gs_dict)
@@ -108,6 +113,9 @@ def get_neg_ppis(gs_dict):
     
     print(f'[{ct}] Removing known gold standard PPIs from all possible PPI combinations ...')
     neg_ppis = set(fsets).difference(set(flat_gs_ppis))
+    
+    # make sure there is no overlap between positive & negative PPI pairs
+    assert len(set(neg_ppis) & set(flat_gs_ppis)) == 0, "Overlap between positive and negative PPIs detected."
     
     print(f'--> # total possible negative PPIs = {len(neg_ppis)}')
     return(neg_ppis)
@@ -269,11 +277,6 @@ def format_fmat(labeled_fmat, keep_overlap_groups=False, shuffle_feats=False, sh
     return(fmat_fmt)
 
 def write_fmat_files(labeled_fmat, fmat_file, outfile=None):
-    # format outfile path/name if none specified
-    if not outfile:
-        plist = fmat_file.split('/', 1)
-        outpath = '/'.join(plist[:-1])+'/'
-        outfile = outpath+'featmat_labeled'
     
     # write out matrices
     print(f'[{ct}] Writing out matrices:')
@@ -320,20 +323,43 @@ def main():
     if args.seed:
         random.seed(args.seed)
         
+    # format outfile paths/names
+    if args.outfile_name:
+        fmat_out = args.outfile_name
+        path = fmat_out.split('/', 1)
+        outpath = '/'.join(path[:-1])+'/'
+        pos_ppi_out = outpath+'positive_ppi_dict.pkl'
+        neg_ppi_out = outpath+'negative_ppi_dict.pkl'
+    else:   
+        path = args.featmat.split('/', 1)
+        outpath = '/'.join(path[:-1])+'/'
+        fmat_out = outpath+'featmat_labeled'
+        pos_ppi_out = outpath+'positive_ppi_dict.pkl'
+        neg_ppi_out = outpath+'negative_ppi_dict.pkl'
+        
     # make dicts for +/- labels
+    print(f'[{ct}] Generating grouped positive PPI labels from gold standard complexes ...')
     gs_dict = make_gs_dict(args.gold_std_file)
     all_neg_ppis = get_neg_ppis(gs_dict)
     obs_neg, obs_pos = find_obs_labels(args.featmat, all_neg_ppis, gs_dict)
     neg_dict, pos_dict = make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=args.num_negatives)
     
+    # write out positive/negative ppis
+    with open(pos_ppi_out, 'wb') as handle:
+        pickle.dump(pos_dict, handle)
+        
+    with open(neg_ppi_out, 'wb') as handle:
+        pickle.dump(neg_dict, handle)
+        
     # label feature matrix
     labeled_fmat = label_fmat(args.featmat, pos_dict, neg_dict)
     
     # format feature matrix
     fmat_out = format_fmat(labeled_fmat, args.keep_cmplx_overlap, args.shuffle_feats, args.shuffle_rows)
-    
-    # write results
-    write_fmat_files(fmat_out, args.featmat, args.outfile_name)
+        
+    # write final feature matrix results
+    write_fmat_files(fmat_out, args.featmat, fmat_out)
+        
     print(f"[{ct}] ---------------------------------------------------------")
     print(f"[{ct}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")
     print(f"[{ct}] ---------------------------------------------------------")
@@ -360,7 +386,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--seed", action="store", default=None, help="(Optional) Specify seed to make randomized negative PPIs reproducible.")
     
     # specify if you want to keep the redundant group col
-    parser.add_argument("--keep_cmplx_overlap", action="store_true", default=False, help="(Optional) Specify if you want to keep protein complex group numbers with redundant PPIs. Default=False (recommended).")
+    parser.add_argument("--keep_cmplx_overlap", action="store_true", default=False, help="(Optional) Specify if you want to keep protein complex group numbers with redundant PPIs. Default=False (only recommended to keep for running through sanity_checks.py, which will evaluate merge behavior).")
     
     # specify if you want to shuffle feature columns
     parser.add_argument("--shuffle_feats", action="store_true", default=False, help="(Optional) Specify if you want to shuffle feature columns. Default=False.")

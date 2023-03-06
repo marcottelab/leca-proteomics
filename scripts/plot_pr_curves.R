@@ -40,12 +40,14 @@ pr4 <- readr::read_csv(pr4f) %>%
 
 all_pr <- rbind(pr1, pr2, pr3, pr4)
 
-p <- ggplot(all_pr, aes(x = Recall, y = Precision, color = set, group = fct_rev(fct_reorder(set, fct_lvl)))) +
+p <- ggplot(all_pr, aes(x = Recall, y = Precision, color = set, group = fct_reorder(set, fct_lvl))) +
   geom_line(size = 1.5) +
   scale_color_manual(values = pal, name = "") +
   theme(legend.position = "bottom") +
-  guides(color = guide_legend(nrow=2, byrow=TRUE))
+  guides(color = guide_legend(nrow=2, byrow=TRUE, reverse=TRUE)) +
+  geom_hline(yintercept = 0.85, linetype='dotted') +
+  annotate("text", x = 0.85, y = 0.85, label = "15% FDR", vjust = -0.5)
 p
 
-ggsave("ppi_ml/figures/model_performance_w_fixedAPMS.png", p, device = "png", 
-       width = 8, height = 10.5, units = "in")
+ggsave("ppi_ml/figures/model_performance_new_pipeline.png", p, device = "png", 
+       width = 12, height = 8, units = "in")
