@@ -325,17 +325,17 @@ def main():
         
     # format outfile paths/names
     if args.outfile_name:
-        fmat_out = args.outfile_name
-        path = fmat_out.split('/', 1)
+        fmat_outfile = args.outfile_name
+        path = fmat_outfile.split('/', -1)
         outpath = '/'.join(path[:-1])+'/'
-        pos_ppi_out = outpath+'positive_ppi_dict.pkl'
-        neg_ppi_out = outpath+'negative_ppi_dict.pkl'
+        pos_ppi_outfile = outpath+'positive_ppi_dict.pkl'
+        neg_ppi_outfile = outpath+'negative_ppi_dict.pkl'
     else:   
-        path = args.featmat.split('/', 1)
+        path = args.featmat.split('/', -1)
         outpath = '/'.join(path[:-1])+'/'
-        fmat_out = outpath+'featmat_labeled'
-        pos_ppi_out = outpath+'positive_ppi_dict.pkl'
-        neg_ppi_out = outpath+'negative_ppi_dict.pkl'
+        fmat_outfile = outpath+'featmat_labeled'
+        pos_ppi_outfile = outpath+'positive_ppi_dict.pkl'
+        neg_ppi_outfile = outpath+'negative_ppi_dict.pkl'
         
     # make dicts for +/- labels
     print(f'[{ct}] Generating grouped positive PPI labels from gold standard complexes ...')
@@ -345,10 +345,10 @@ def main():
     neg_dict, pos_dict = make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=args.num_negatives)
     
     # write out positive/negative ppis
-    with open(pos_ppi_out, 'wb') as handle:
+    with open(pos_ppi_outfile, 'wb') as handle:
         pickle.dump(pos_dict, handle)
         
-    with open(neg_ppi_out, 'wb') as handle:
+    with open(neg_ppi_outfile, 'wb') as handle:
         pickle.dump(neg_dict, handle)
         
     # label feature matrix
@@ -358,7 +358,7 @@ def main():
     fmat_out = format_fmat(labeled_fmat, args.keep_cmplx_overlap, args.shuffle_feats, args.shuffle_rows)
         
     # write final feature matrix results
-    write_fmat_files(fmat_out, args.featmat, fmat_out)
+    write_fmat_files(fmat_out, args.featmat, fmat_outfile)
         
     print(f"[{ct}] ---------------------------------------------------------")
     print(f"[{ct}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")

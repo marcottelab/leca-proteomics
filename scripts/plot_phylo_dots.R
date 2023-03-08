@@ -35,37 +35,11 @@ species_order <- read_delim('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/
 # clade order
 clade_order <- c('Amorphea','Excavate','TSAR','Archaeplastida')
 
-# og annotations
-annots <- read_tsv('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_annotated.fmt.tsv') %>%
-  select(ID, matches('*genes_fmt*'),
-         human_protein_names,
-         human_function_cc) %>%
-  mutate(gene_names = coalesce(human_genes_fmt,
-                               arath_genes_fmt,
-                               ID)) %>%
-  select(-matches('*genes_fmt*')) %>%
-  select(ID, gene_names, everything())
-
-multimapped <- annots %>%
-  group_by(gene_names) %>%
-  tally() %>%
-  filter(n > 1)
-
-annots$gene_names = gsub(x = annots$gene_names, pattern = ";",
-                             replacement = ",")
-annots$gene_names = gsub(x = annots$gene_names, pattern = "NA ",
-                             replacement = "")
-
-annots_fmt <- annots %>%
-  mutate(gene_names = str_replace(gene_names, "^([^,]*,[^,]*),.*", "\\1 ...")) %>% 
-  mutate(id_suffix = paste0("(",ID,")")) %>%
-  mutate(gene_names = ifelse(gene_names %in% multimapped$gene_names, 
-                             paste(gene_names,id_suffix,sep="\n"), 
-                             gene_names)) %>%
-  select(-id_suffix)
+# annotations
+annots <- read_csv('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_plot_annots.csv')
 
 # -----------------------------------------------------
-#################### functions ####################
+#################### functions #######################
 # -----------------------------------------------------
 
 # get coverage data for complex
@@ -103,7 +77,7 @@ fmt_phylo_data <- function(cov_cmplx){
     pivot_longer(-c(ID, characterization_status, fct_lvl),
                  names_to = "species", values_to = "presence") %>%
     left_join(species, by=c("species" = "code")) %>%
-    left_join(annots_fmt, by=c("ID")) %>%
+    left_join(annots, by=c("ID")) %>%
     mutate(gene_names_nov = ifelse(str_detect(characterization_status, 'Novel'),
                                    paste0('*', gene_names),
                                    gene_names)) %>%

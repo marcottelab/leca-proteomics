@@ -174,9 +174,6 @@ generate_plot <- function(df, outfile){
                "#F39B7F", "#8491B4", "#91D1C2", "#DC0000",
                "#7E6148", "#B09C85")
   
-  # get cmplx size
-  num_units <- length(pull(df, orthogroup) %>% unique)
-  
   # get line size
   line_var <- df %>%
     pull(line_size) %>%
@@ -215,6 +212,8 @@ generate_plot <- function(df, outfile){
     guides(linetype = guide_legend(override.aes = list(size = 10)))
   final_plot
   
+  # get cmplx size
+  num_units <- length(pull(df, orthogroup) %>% unique)
   if(num_units <= 5){
     
     final_plot <- final_plot +
