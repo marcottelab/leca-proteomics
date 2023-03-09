@@ -63,6 +63,7 @@ def main():
     pipeline_opt = TPOTClassifier()
     pipeline_opt = TPOTClassifier(generations=args.generations, population_size=args.pop_size, random_state=args.seed, cv=5, verbosity=2)
     outfile = args.outdir+'tpot_pipeline'
+    model_out = args.outdir+'tpot_model'
 
     X, y, groups = fmt_data(args.featmat)
 
@@ -83,8 +84,13 @@ def main():
         pipeline_opt.fit(X_train, y_train) 
         print(pipeline_opt.score(X_test, y_test))
             
-        print(f"Writing results to {outfile+'_'+str(i+1)} ...")
+        print(f"Writing TPOT results to {outfile+'_'+str(i+1)} ...")
         pipeline_opt.export(outfile+'_'+str(i+1))
+        
+        print(f"Writing optimized TPOT model object to {model_out+'_'+str(i+1)}.pkl ...")
+        model = pipeline_opt.fitted_pipeline_
+        with open(f'{model_out}_{i+1}.pkl', 'wb') as f:
+            pickle.dump(model,f)
 
 """ When executed from the command line: """
 if __name__ == "__main__":
