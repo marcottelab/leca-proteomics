@@ -170,17 +170,14 @@ def threshold_ppis(test_scores, all_res, fdr_cutoff):
     # theshold results
     thres_df = all_res[all_res['ppi_score'] >= prob_cutoff]
     ids = thres_df['ID'].str.split(' ', expand=True)
-    try: # works if there are no self-self PPIs
-        uniq_prots = np.unique(ids[[0, 1]].values)
-    except: # works if there are singletons from self-self PPIs
-        uniq_prots = set()
-        for pair in ids:
-            for i in pair:
-                uniq_prots.add(i)
-    df_out = thres_df[['ID','ppi_score']]
     print(f'►  # total PPIs evaluated: {len(all_res)}')
     print(f'►  # PPIs above threshold: {len(thres_df)}')
-    print(f'►  # unique proteins above threshold: {len(uniq_prots)}')
+    try: # only works if there are no self-self PPIs
+        uniq_prots = np.unique(ids[[0, 1]].values)
+        print(f'►  # unique proteins above threshold: {len(uniq_prots)}')
+    except:
+        print('WARNING: self-self PPIs detected.')
+    df_out = thres_df[['ID','ppi_score']]
     return(test_scores_pr, df_out)
     
 
