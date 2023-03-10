@@ -176,7 +176,8 @@ def threshold_ppis(test_scores, all_res, fdr_cutoff):
         uniq_prots = np.unique(ids[[0, 1]].values)
         print(f'►  # unique proteins above threshold: {len(uniq_prots)}')
     except:
-        print('WARNING: self-self PPIs detected.')
+        print('WARNING: Problem with IDs detected.')
+        print(ids[0:51])
     df_out = thres_df[['ID','ppi_score']]
     return(test_scores_pr, df_out)
     
@@ -213,7 +214,7 @@ def main():
     print()
     print('Pipeline settings detected:')
     print(table)
-    print('*Note: Group split method will attempt to get as close to these settings as possible, but results may vary depending on the seed and number of cross-validation splits specified.')
+    print('*Note: Group split method will attempt to get as close to these settings as possible, but results may vary depending on the seed, group sizes, and number of cross-validation splits specified.')
     
     ## fit model, compute precision/recall, and output results
     for i, (test_idx, train_idx) in enumerate(gs.split(X, y, groups)):
