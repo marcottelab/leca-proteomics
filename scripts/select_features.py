@@ -12,71 +12,99 @@ import numpy as np
 import pickle
 import argparse
 import random
-from sklearn.model_selection import GroupShuffleSplit
-from sklearn.model_selection import StratifiedKFold
-from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.ensemble import *
+from sklearn.model_selection import *
+from sklearn.metrics import *
+from sklearn.preprocessing import *
+from sklearn.pipeline import make_pipeline
 from sklearn.feature_selection import RFECV
 from functools import reduce
 
 def load_data(fmat_file):
-    
     # load data
-    print(f'Reading in {fmat_file} ...\n')
     with open(fmat_file, 'rb') as handle:
-        fmat = pickle.load(handle)
-        
+        fmat = pickle.load(handle) 
     # print # +/- labels
     print(f"Total # positive labels: {len(fmat[fmat['label']==1])}")
     print(f"Total # negative labels: {len(fmat[fmat['label']==-1])}")
-    
     # define cols
     label_cols = ['ID', 'label', 'super_group']
     data_cols = [c for c in fmat.columns.values.tolist() if c not in label_cols]
-    
     return(fmat, label_cols, data_cols)
 
-def fmt_arrays(fmat, label_cols, data_cols):
+def load_model(model_file, seed=None):
+    with open(model_file, 'rb') as f:
+        model = pickle.load(f)
+    try:
+        n_steps = len(model.named_steps)
+        idx = n_steps-1
+        model_name = type(model[idx]).__name__
+        if seed:
+            setattr(model[idx], 'random_state', seed)
+    except:
+        model_name = type(model).__name__
+        if seed:
+            print(f'WARNING: failed to set random state for {model} to {seed}!')
+    return(model, model_name)
 
+def def_grp_split(method='GroupShuffleSplit', num_splits=5, train_size=0.7, seed=None):
+    if method == 'GroupShuffleSplit':
+        gs = GroupShuffleSplit(n_splits = num_splits, train_size=train_size, random_state=seed)
+    elif method == 'GroupKFold':
+        gs = GroupKFold(n_splits = num_splits)
+    elif method == 'StratifiedGroupKFold':
+        gs = StratifiedGroupKFold(n_splits = num_splits)
+    else:
+        print('Invalid group split strategy specified; please choose one of: "GroupShuffleSplit", "GroupKFold", or "StratifiedGroupKFold"')
+        print('Review documentation for more information on each method: https://scikit-learn.org/stable/modules/classes.html#module-sklearn.model_selection')
+    return(gs)
+
+def fmt_outdir(outdir):
+    if outdir.endswith('/'):
+        return(outdir)
+    else:
+        return(outdir+'/')
+
+def fmt_arrays(fmat, label_cols, data_cols):
     # convert df cols to arrays
     X = fmat[data_cols].to_numpy()
     y = fmat[label_cols[1]].to_numpy()
     groups = fmat[label_cols[2]].to_numpy()
-    
     return(X, y, groups)
 
-def set_rfe_params(step=7, min_feats=1, num_threads=4, seed=None):
-    
-    # define model to train on
-    clf = ExtraTreesClassifier(n_estimators=100, random_state=seed)
-    print(f'Selected model: {clf}')
-    
+def set_rfe_params(model, step=7, min_feats=1, num_threads=4, seed=None):
+    # extract estimator if TPOT pipeline passed to script
+    try:
+        n_steps = len(model.named_steps)
+        idx = n_steps-1
+        est = model[idx]
+    except AttributeError:
+        est = model
+    print(f'Selected method: {est}')
     # feature selector (rfe w/ cross-validation)
     cv = StratifiedKFold(5)
     rfecv = RFECV(
-        estimator=clf,
+        estimator=est,
         step=step,
         cv=cv,
         scoring="accuracy",
         min_features_to_select=min_feats,
         n_jobs=num_threads)
     
+    print(f'Selected RFECV parameters:')
+    print(rfecv)
     return(rfecv)
 
-
-def fit_rfe(model, fold, X_train, y_train):
-    
+def fit_rfe(model, X_train, y_train):
     # run recursive feature elimination
     model.fit(X_train, y_train)
     print(f"Optimal number of features: {model.n_features_}")
-    
     return(model)
 
 def plot_results(rfecv_fit, fold, X_test, y_test, outname, outdir):
-    
     # plot results
     print(f'Generating RFECV evaluation plots ...')
     min_features_to_select=1
-    
     # mean test accuracy vs number of feats selected
     import matplotlib.pyplot as plt
     n_scores = len(rfecv_fit.cv_results_["mean_test_score"])
@@ -88,21 +116,17 @@ def plot_results(rfecv_fit, fold, X_test, y_test, outname, outdir):
         rfecv_fit.cv_results_["mean_test_score"],
         yerr=rfecv_fit.cv_results_["std_test_score"],
     )
-    
     plt.title(f"Recursive feature elimination\nwith correlated features (fold #{fold+1})")
-    print(f'Saving mean accuracy plot to {outdir+outname}_nfeats-vs-acc_internal_cvtest.png ...')
+    print(f'►  Saving mean accuracy plot to {outdir+outname}_nfeats-vs-acc_internal_cvtest.png ...')
     plt.savefig(f'{outdir+outname}_nfeats-vs-acc_internal_cvtest.png', dpi=300, transparent=True)
-    
     # PR curve
     from sklearn.metrics import PrecisionRecallDisplay
     PrecisionRecallDisplay.from_estimator(rfecv_fit, X_test, y_test)
-    print(f'Saving PR plot to {outdir+outname}_prcurve_holdout_test.png ...')
+    print(f'►  Saving PR plot to {outdir+outname}_prcurve_holdout_test.png ...')
     plt.savefig(f'{outdir+outname}_prcurve_holdout_test.png', dpi=300, transparent=True)
     
 def get_importances(rfecv_fit, data_cols, fold):
-    
     # get result table
-    print(f'Extracting RFECV selected features & scores ...')
     results = pd.DataFrame({'feature':data_cols, 'rank':rfecv_fit.ranking_, 'support':rfecv_fit.support_})
     sel_feats = results[results['support'] == True]
     sel_feats_scored = sel_feats.head(rfecv_fit.n_features_)
@@ -111,37 +135,38 @@ def get_importances(rfecv_fit, data_cols, fold):
     sel_feats_scored['mdi'] = rfecv_fit.estimator_.feature_importances_
     sel_feats_scored = sel_feats_scored.sort_values('mdi')
     sel_feats_scored['fold'] = int(fold+1)
-
     return(sel_feats_scored)
 
 def main():
     
-    # define seed, if any
-    if args.seed:
-        seed = args.seed
-    
-    # define split strategy
-    gss = GroupShuffleSplit(n_splits=args.num_splits, train_size=float(args.train_size), random_state=args.seed)
-
-    # define feature selector
-    rfecv_params = set_rfe_params(step=args.remove_per_step, min_feats=1, num_threads=args.threads)
-    print(rfecv_params)
-    
     # load & format data
+    print(f'Loading feature matrix ...')
     fmat, label_cols, data_cols = load_data(args.featmat)
     X, y, groups = fmt_arrays(fmat, label_cols, data_cols)
     
+    print(f'Loading complex group split method parameters ...')
+    gs = def_grp_split(args.group_split_method, args.num_splits, args.train_size, args.seed)
+    
+    print(f'Loading model parameters...')
+    model, model_name = load_model(args.model, args.seed)
+
+    # define feature selector
+    print(f'Loading recursive feature selection parameters ...')
+    rfecv_params = set_rfe_params(model, step=args.remove_per_step,
+                                  min_feats=1, num_threads=args.threads)
+    
     # get gss splits for each iteration
     print()
-    print(f'----- Running recursive feature elimination for {args.num_splits} GSS splits -----')
+    print(f'----- Running recursive feature elimination for {args.num_splits} {args.group_split_method} train/test sets -----')
     print()
     
     fold_df_lst = []
     optimal_n_dict = dict()
     
-    for i, (train_idx, test_idx) in enumerate(gss.split(X, y, groups)):
+    # TODO: organize blocks into functions to make main() more readable
+    for i, (test_idx, train_idx) in enumerate(gs.split(X, y, groups)):
         
-        print(f'Executing RFE for GSS split #{i+1} ...')
+        print(f'Executing RFE for train/test split #{i+1} ...')
         
         # define test/train splits
         X_train = X[train_idx]
@@ -160,17 +185,17 @@ def main():
         print(f' --> +/- label balance: {label_counts_test}')
         
         # run rfe
-        rfecv_fit = fit_rfe(rfecv_params, i, X_train, y_train)
+        rfecv_fit = fit_rfe(rfecv_params, X_train, y_train)
         
         # define output vars
-        suffix = 'gssfold'+str(i+1)
-        outname = f'featsel_xtrees_{suffix}'
-        outdir = args.outdir
+        suffix = 'fold'+str(i+1)
+        outname = f'top_feats_{model_name}_RFECV_{suffix}'
+        outdir = fmt_outdir(args.outdir)
         
         # extract & write results
         plot_results(rfecv_fit, i, X_test, y_test, outname=outname, outdir=outdir)
         
-        print(f'Writing feature importances for GSS split #{i+1} to {outdir+outname}.csv ...')
+        print(f'►  Writing feature importances for train/test split #{i+1} to {outdir+outname}.csv ...')
         featsel_df = get_importances(rfecv_fit, data_cols, i)
         featsel_df.to_csv(f'{outdir+outname}.csv', index=False)
         
@@ -201,10 +226,10 @@ def main():
     
     print(f'# common features: {len(feat_intxn)}')
     print(f'# optimal features averaged across all folds: {avg_n_feats}')
-    print(f'Writing results to {outdir} ...')
-    agg_res.to_csv(f'{outdir}featsel_xtrees_allres.csv', index=False)
-    feat_intxn.to_csv(f'{outdir}featsel_xtrees_intxn.csv', index=False)
-    opt_n_df.to_csv(f'{outdir}featsel_xtrees_optimal_num.csv', index=False)
+    print(f'►  Writing summary results to {outdir} ...')
+    agg_res.to_csv(outdir+f'top_feats_{model_name}_RFECV_all.csv', index=False)
+    feat_intxn.to_csv(outdir+f'top_feats_{model_name}_RFECV_intersection.csv', index=False)
+    opt_n_df.to_csv(outdir+f'top_feats_{model_name}_RFECV_optimalnum.csv', index=False)
 
 """ When executed from the command line: """
 if __name__ == "__main__":
@@ -214,11 +239,17 @@ if __name__ == "__main__":
     # specify feature matrix
     parser.add_argument("-f", "--featmat", help="(Required) Path to labeled, grouped, and pickled feature matrix. PPI ID column is a column named 'ID' and protein names are separated by a space, positive/negative labels are given as 1/-1 in a column named 'label', groups are given in a column named 'super_group'. ")
     
+    # specify model
+    parser.add_argument("-m", "--model", action="store", help="(Required) Path to (pickle) file containing a scikit-learn model object with pre-optimized parameters (e.g., as output by run_tpot.py).")
+    
     # specify output directory
     parser.add_argument("-o", "--outdir", action="store", help="(Required) Path to directory to write results.")
     
-    # specify number of group-shuffle-splits to test
-    parser.add_argument("--num_splits", action="store", default=5, type=int, help="(Optional) Specify number of group-shuffled train/test splits to run recursive feature elimination on (default=5).")
+    # specify group split strategy
+    parser.add_argument("--group_split_method", action="store", default="GroupShuffleSplit", help="(Optional) Specify method for splitting protein complex groups; one of: 'GroupShuffleSplit', 'GroupKFold', or 'StratifiedGroupKFold' (default=GroupShuffleSplit)")
+    
+    # specify number splits to test
+    parser.add_argument("--num_splits", action="store", default=5, type=int, help="(Optional) Specify number of train/test splits to run recursive feature elimination on (default=5).")
     
     # specify proportion of data to train on for every GSS
     parser.add_argument("--train_size", action="store", type=float, default=0.7, help="(Optional) Specify fraction of data to train on for every group-shuffle-split iteration (default=0.7).")

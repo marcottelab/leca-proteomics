@@ -58,6 +58,7 @@ def def_grp_split(method='GroupShuffleSplit', num_splits=5, train_size=0.7, seed
     
     return(gs)
 
+""" Main """
 def main():
 
     pipeline_opt = TPOTClassifier()
