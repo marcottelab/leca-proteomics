@@ -69,7 +69,7 @@ def main():
     print(f'[{ct}] Optimal # of clusters that maximize network modularity: ', n_opt)
 
     # get range of cuts 
-    print(f'[{ct}] Computing dendogram cuts for more inclusive clusters ...')
+    print(f'[{ct}] Computing dendogram cuts for more exclusive clusters ...')
     cuts = np.linspace(n_opt, total_prots, 8, endpoint=False)
     cuts = np.floor(cuts)
     cuts = np.delete(cuts, 0)
