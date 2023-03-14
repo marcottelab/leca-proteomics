@@ -23,7 +23,7 @@ args <- parser$parse_args()
 # -----------------------------------------------------
 
 # coverage data
-scores <- read_csv('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/apms/clustered_og_scores_subset.csv') %>%
+scores <- read_csv('/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/uncharacterized_plasmalogen_complex_apms_scores_subset.csv') %>%
   mutate(ID2 = coalesce(ID2, ID1))
 
 score_cols = names(select(scores, !c(ID1, ID2, cmplx)))
