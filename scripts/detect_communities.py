@@ -19,7 +19,7 @@ from datetime import datetime as dt
 def make_graph(score_file):
     # read in data
     scores = pd.read_csv(score_file)
-    # format graph dataframe
+    # format graph data frame
     gdf = pd.DataFrame()
     gdf[['ID1','ID2']] = scores['ID'].str.split(' ', expand=True)
     gdf['weight'] = scores['ppi_score']
@@ -50,13 +50,12 @@ def walktrap(graph, n_steps=4, n_clusters=None):
 def main():
 
     t0 = time.time()
-    
     # set seed if specified
     if args.seed:
         random.seed(args.seed)
 
     # format data into igraph object
-    print(f'[{dt.now()}] Loading scores into graph ...')
+    print(f'[{dt.now()}] Loading PPI scores into graph ...')
     ppi_graph = make_graph(args.scores)
     total_prots = ppi_graph.vcount()
 
@@ -65,7 +64,7 @@ def main():
     print(f'[{dt.now()}] Initializing walktrap with default parameters to find optimal number of clusters ...')
     df_opt = walktrap(ppi_graph)
     n_opt = len(df_opt.iloc[:,1].drop_duplicates())
-    print(f'[{dt.now()}] Optimal # of clusters that maximize network modularity: ', n_opt)
+    print(f'[{dt.now()}] Optimal # of clusters that maximize network modularity:', n_opt)
 
     # get range of cuts 
     print(f'[{dt.now()}] Computing dendogram cuts for more exclusive clusters ...')
@@ -101,8 +100,10 @@ def main():
     print(f'[{dt.now()}] Writing results to {outname}...')
     df_out.to_csv(outname+'.csv', index=False)
     df_out.to_excel(outname+'.xlsx', index=False)
-    rt = round((time.time()-t0)/60, 2)
-    print(f'[{dt.now()}] Done! Total run time = {rt} minutes.')
+    
+    print(f"[{dt.now()}] ---------------------------------------------------------")
+    print(f"[{dt.now()}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")
+    print(f"[{dt.now()}] ---------------------------------------------------------")
     
 if __name__ == "__main__":
     

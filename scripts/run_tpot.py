@@ -64,10 +64,10 @@ def main():
     print(f'[{dt.now()}] Extracting train/test data from {args.featmat}...')
     X, y, groups = fmt_data(args.featmat)
     
-    print(f'[{dt.now()}] Setting up group split method ...')
+    print(f'[{dt.now()}] Loading complex group split method parameters ...')
     gs = def_grp_split(args.group_split_method, args.num_splits, args.train_size, args.seed)
     
-    print(f'[{dt.now()}] Setting up TPOTClassifier() pipeline ...')
+    print(f'[{dt.now()}] Loading TPOTClassifier() pipeline ...')
     pipeline_opt = TPOTClassifier()
     pipeline_opt = TPOTClassifier(generations=args.generations, population_size=args.pop_size, random_state=args.seed, cv=5, verbosity=2)
     
@@ -82,12 +82,12 @@ def main():
         X_test = X[test_idx]
         y_test = y[test_idx]
 
-        print(f'[{dt.now()}] Running TPOT for split #{i+1}...')
+        print(f'[{dt.now()}] Running TPOT for split #{i+1} ...')
         print(f"--> # train PPIs = {len(X[train_idx])}")
         print(f"--> # test PPIs = {len(X[test_idx])}")
 
         pipeline_opt.fit(X_train, y_train) 
-        print(f'[{dt.now()}] Test set score: {pipeline_opt.score(X_test, y_test)}')
+        print(f'[{dt.now()}] Test set score for split #{i+1}: {pipeline_opt.score(X_test, y_test)}')
             
         print(f"[{dt.now()}] Writing TPOT results to {outfile+'_'+str(i+1)} ...")
         pipeline_opt.export(outfile+'_'+str(i+1))
@@ -97,8 +97,9 @@ def main():
         with open(f'{model_out}_{i+1}.pkl', 'wb') as f:
             pickle.dump(model,f)
     
-    rt = round((time.time()-t0)/60, 2)
-    print(f'[{dt.now()}] Done! Total run time = {rt} minutes.')
+    print(f"[{dt.now()}] ---------------------------------------------------------")
+    print(f"[{dt.now()}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")
+    print(f"[{dt.now()}] ---------------------------------------------------------")
 
 """ When executed from the command line: """
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 """
-Script for building a feature matrix given a directory of CSV or pickle files containing features. Can merge 20M rows x 10K columns given ~250GB of RAM in about an hour; bigger data sets may require more RAM.
+Script for building a feature matrix given a directory of CSV or pickle files containing features. Can merge 20M rows x 10K columns across ~40 files given ~250GB of RAM in about an hour. Bigger data sets may require more time/RAM, while more files will require you to run this script on smaller subsets of the data before performing a final merge on the pre-built subset feature matrices.
 @author: Rachael Cox <rachaelcox@utexas.edu>
 """
 
@@ -17,12 +17,15 @@ import time
 import numpy as np
 from datetime import datetime as dt
 
-def make_fset(x):
+def make_fset(x, drop=True):
     if len(set(x.split(' '))) < 2:
-        print(f"WARNING: Correlation metrics for '{x}' (self-self PPI) detected; make sure you mean for this to be included ...")
-        x1 = x.split(' ')[0]
-        fset = frozenset({x1})
-        return(fset)
+        print(f"WARNING: Features for '{x}-{x}' (self-self PPI) detected ...")
+        if drop == False:
+            x1 = x.split(' ')[0]
+            fset = frozenset({x1,x1})
+            return(fset)
+        else:
+            return(None)
     else:
         x1 = x.split(' ')[0]
         x2 = x.split(' ')[1]
@@ -38,7 +41,7 @@ def read_files(data_dir, pickle_files=False):
         flist = [f for f in os.listdir(data_dir) if re.match('.*.pkl', f)]
         flist.sort()
         for f in flist:
-            print(f'--> Reading {f} ...')
+            print(f' ► Reading {f} ...')
             with open(data_dir+f, 'rb') as handle:
                 df = pickle.load(handle)
             df = df.round(4)
@@ -50,7 +53,7 @@ def read_files(data_dir, pickle_files=False):
         flist = [f for f in os.listdir(data_dir) if not re.match('.*.pkl', f)]
         flist.sort()
         for f in flist:
-            print(f'--> Reading {f} ...')
+            print(f' ► Reading {f} ...')
             df = pd.read_csv(data_dir+f)
             df = df.round(4)
             df['frozen_pair'] = [make_fset(i) for i in df['ID']]
@@ -88,9 +91,9 @@ def build_fmat(fmat_list, join_type='outer', left_index=None):
     fmat.drop(['frozen_pair'], axis=1, inplace=True)
     feat_cols = [c for c in fmat.columns.values.tolist() if c != 'ID']
     fmat = fmat[['ID'] + feat_cols]
-    print(f'--> Final feature matrix {fmat.shape}:')
+    print(f' ► Final feature matrix {fmat.shape}:')
     print(fmat.head())
-    print(f'--> Total time to merge feature matrices: {time.time() - t0} seconds')
+    print(f' ► Total time to merge feature matrices: {time.time() - t0} seconds')
     return(fmat)
 
 def write_fmat(fmat, data_dir, outfile_name):
@@ -99,21 +102,19 @@ def write_fmat(fmat, data_dir, outfile_name):
         data_dir = data_dir+"/"
     if not outfile_name:
         outfile_name = data_dir+'featmat'
-    print(f"--> Serializing joined matrix to {outfile_name+'.pkl'} ... ")
+    print(f" ► Serializing joined matrix to {outfile_name+'.pkl'} ... ")
     fmat.to_pickle(outfile_name+'.pkl')
-    print(f"--> Writing joined matrix to CSV {outfile_name} ...")
+    print(f" ► Writing joined matrix to CSV {outfile_name} ...")
     fmat.to_csv(outfile_name, index=False)
-    print(f'--> Total time to write out results: {time.time() - t0} seconds')
+    print(f' ► Total time to write out results: {time.time() - t0} seconds')
 
 
 def main():
     
-    t = time.time()
-    
+    t0 = time.time()
     # get files
     print(f'[{dt.now()}] Reading in feature files from {args.directory} ...')
     fmat_list = read_files(args.directory, args.pickle)
-    print(f'[{dt.now()}] Total time to read in & format all files: {time.time() - t0} seconds')
     # eval join type & build feature matrix
     print(f'[{dt.now()}] Merging feature matrices ...')
     if args.left_join_file:
@@ -126,7 +127,7 @@ def main():
     print(f'[{dt.now()}] Done!')
     
     print(f"[{dt.now()}] ---------------------------------------------------------")
-    print(f"[{dt.now()}] Total run time: {(time.time()-t)/60} minutes.")
+    print(f"[{dt.now()}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")
     print(f"[{dt.now()}] ---------------------------------------------------------")
         
 if __name__ == "__main__":
@@ -134,16 +135,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # specify directory (required)
-    parser.add_argument("-d", "--directory", help="Required: path to directory where feature files are located. Must be CSV or pickled files.")
+    parser.add_argument("-d", "--directory", help="(Required) path to directory where feature files are located. Must be CSV or pickled files.")
 
     # specify if pickle files (default=false)
-    parser.add_argument("-p", "--pickle", action="store_true", default=False, help="Optional: specify this argument to indicate features are compressed into pickle files (will significantly speed up run time).")
+    parser.add_argument("-p", "--pickle", action="store_true", default=False, help="(Optional) specify this argument to indicate features are compressed into pickle files (will significantly speed up run time).")
     
     # specify if you want to left join on a file
-    parser.add_argument("-l", "--left_join_file", action="store", default=None, help="Optional: specify a file with IDs you want to use as a left join index (will significantly speed up run time).")
+    parser.add_argument("-l", "--left_join_file", action="store", default=None, help="(Optional) specify a file with IDs you want to use as a left join index (will significantly speed up run time).")
 
     # specify outfile name (default='featmat', written to the given data directory)
-    parser.add_argument("-o", "--outfile_name", action="store", default=None, help="Optional: specify the outfile path/name (defaults are 'featmat' and 'featmat.pkl', written to the given feature directory).")
+    parser.add_argument("-o", "--outfile_name", action="store", default=None, help="(Optional) specify the outfile path/name (defaults are 'featmat' and 'featmat.pkl', written to the given feature directory).")
 
     # specify output of "--version"
     parser.add_argument(

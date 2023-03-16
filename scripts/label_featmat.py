@@ -28,13 +28,13 @@ Functions for iterative row-wise labeling:
 # convert space-separated IDs to iterable sets
 def make_fset(x, drop=True):
     if len(set(x.split(' '))) < 2:
+        print(f"WARNING: Features for '{x}-{x}' (self-self PPI) detected ...")
         if drop == False:
-            print(f"WARNING: Features for '{x}' (self-self PPI) detected ...")
             x1 = x.split(' ')[0]
-            fset = frozenset({x1})
+            fset = frozenset({x1,x1})
             return(fset)
         else:
-            return()   
+            return(None)
     else:
         x1 = x.split(' ')[0]
         x2 = x.split(' ')[1]
@@ -103,14 +103,14 @@ def get_neg_ppis(gs_dict):
     # get proteins from gold standard PPIs to generate negative PPIs
     random_prots = set()
     flat_gs_ppis = [pair for pair_list in list(gs_dict.values()) for pair in pair_list]
-    print(f' ► # total possible gold standard PPIs = {len(set(flat_gs_ppis))}')
+    print(f' ► Total # possible gold standard PPIs = {len(set(flat_gs_ppis))}')
     all_gs_prots = [p for pair in flat_gs_ppis for p in list(pair)]
     uniq_gs_prots = set(all_gs_prots)
-    print(f' ► # unique gold standard prots = {len(set(uniq_gs_prots))}')
+    print(f' ► Total # unique gold standard prots = {len(set(uniq_gs_prots))}')
     
     print(f' ► Getting all protein combinations ...')
     fsets = [frozenset({i, j}) for i,j in list(combinations(list(uniq_gs_prots), 2))]
-    print(f' ► # total pairwise PPIs = {len(fsets)}')
+    print(f' ► Total # pairwise PPIs = {len(fsets)}')
     
     print(f' ► Removing known gold standard PPIs from all possible PPI combinations ...')
     neg_ppis = set(fsets).difference(set(flat_gs_ppis))
@@ -118,7 +118,7 @@ def get_neg_ppis(gs_dict):
     # make sure there is no overlap between positive & negative PPI pairs
     assert len(set(neg_ppis) & set(flat_gs_ppis)) == 0, "Overlap between positive and negative PPIs detected."
     
-    print(f' ► # total possible negative PPIs = {len(neg_ppis)}')
+    print(f' ► Total # possible negative PPIs = {len(neg_ppis)}')
     return(neg_ppis)
 
 # get ppis actually osberved in data
@@ -128,14 +128,14 @@ def find_obs_labels(fmat_file, all_neg_ppis, gs_dict):
     with open(fmat_file, 'rb') as handle:
         fmat = pickle.load(handle)
     fmat_ppis = [make_fset(i) for i in fmat['ID']]
-    print(f' ► # total PPIs observed in data = {len(fmat_ppis)}')
+    print(f' ► Total # PPIs observed in data = {len(fmat_ppis)}')
     
     print(f' ► Finding overlap between observed PPIs and gold standard PPIs ...')
     flat_gs_ppis = [pair for pair_list in list(gs_dict.values()) for pair in pair_list]
     neg_overlap = set(fmat_ppis).intersection(set(all_neg_ppis))
     pos_overlap = set(fmat_ppis).intersection(set(flat_gs_ppis))
-    print(f' ► # total negative PPIs observed in data = {len(neg_overlap)}')
-    print(f' ► # total positive PPIs observed in data = {len(pos_overlap)}')
+    print(f' ► Total # negative PPIs observed in data = {len(neg_overlap)}')
+    print(f' ► Total # positive PPIs observed in data = {len(pos_overlap)}')
     return(neg_overlap, pos_overlap)
 
 # make label dictionaries
@@ -214,11 +214,11 @@ def format_outdir(featmat, outfile_name=None):
     if outfile_name:
         path, filename = os.path.split(os.path.realpath(outfile_name))
         outpath = path+'/'
-        fmat_out = outpath+'/'+outfile_name
+        fmat_out = outpath+filename
     else:
         path, filename = os.path.split(os.path.realpath(featmat))
         outpath = path+'/'
-        fmat_out = outpath+'/'+'featmat_labeled'
+        fmat_out = outpath+'featmat_labeled'
     return(outpath, fmat_out)
 
 def label_fmat(fmat_file, pos_dict, neg_dict):
@@ -227,14 +227,14 @@ def label_fmat(fmat_file, pos_dict, neg_dict):
         fmat = pickle.load(handle)
 
     fmat['frozen_pair'] = [make_fset(i, drop=True) for i in fmat['ID']]
+    fmat = fmat.dropna(subset=['frozen_pair'])
     
     t0 = time.time()
-    
     # get all positive pairs
     pos_pairs = [pair for cmplx in list(pos_dict.values()) for pair in cmplx]
     # label pairs
     fmat['label'] = [match_label(i, pos_pairs, neg_dict) for i in tqdm(fmat['frozen_pair'])]
-    print(f' ► Labeling complex groups ...')
+    print(f'[{dt.now()}] Labeling complex groups ...')
     fmat['group'] = [match_group(i, pos_dict, neg_dict) for i in tqdm(fmat['frozen_pair'])]
     print(f' ► Total time to label {len(fmat)} rows: {time.time() - t0} seconds')
     
@@ -245,7 +245,7 @@ def label_fmat(fmat_file, pos_dict, neg_dict):
     
     print(f' ► Generating merged complex groups ...')
     sdict = make_sprgrp_dict(fmat)
-    print(f' ► Labeling non-redundant complex groups ...')
+    print(f'[{dt.now()}] Labeling non-redundant complex groups ...')
     fmat['super_group'] = [match_spr_grp(i, sdict) for i in tqdm(fmat['group'])]
     return(fmat)
 
@@ -353,9 +353,9 @@ def main():
     # write final feature matrix results
     # write out matrices
     print(f'[{dt.now()}] Writing out matrices:')
-    print(f"[{dt.now()}] Full matrix (labeled + unlabeled) --> {outfile}")
-    print(f"[{dt.now()}] Positive & negative PPIs --> {outfile+'_traintest'}")
-    print(f"[{dt.now()}] Gold standard (positive) PPIs only --> {outfile+'_goldstd'}")
+    print(f"[{dt.now()}] Full matrix (labeled + unlabeled) --> {fmat_outfile}")
+    print(f"[{dt.now()}] Positive & negative PPIs --> {fmat_outfile+'_traintest'}")
+    print(f"[{dt.now()}] Gold standard (positive) PPIs only --> {fmat_outfile+'_goldstd'}")
     write_fmat_files(fmat_out, args.featmat, fmat_outfile)
         
     print(f"[{dt.now()}] ---------------------------------------------------------")

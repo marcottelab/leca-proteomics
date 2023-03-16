@@ -10,7 +10,8 @@ __license__ = "MIT"
 import argparse
 import pickle
 import numpy as np
-import datetime as dt
+from datetime import datetime as dt
+import time
 import pandas as pd
 from beautifultable import BeautifulTable
 from sklearn.ensemble import *
@@ -76,7 +77,10 @@ def load_model(model_file, seed=None):
     except:
         model_name = type(model).__name__
         if seed:
-            print(f'WARNING: failed to set random state for {model} to {seed}!')
+            try:
+                setattr(model, 'random_state', seed)
+            except:
+                print(f'WARNING: failed to set random state for {model} to {seed}!')
     return(model, model_name)
 
 def split_data(X, y, train_idx, test_idx):
@@ -90,10 +94,10 @@ def split_data(X, y, train_idx, test_idx):
     label_counts_train = dict(zip(label, counts))
     label, counts = np.unique(y_test, return_counts=True)
     label_counts_test = dict(zip(label, counts))
-    print(f'►  # train PPIs = {len(X_train)}')
-    print(f'►  train +/- label counts: {label_counts_train}')
-    print(f'►  # test PPIs = {len(X_test)}')
-    print(f'►  test +/- label counts: {label_counts_test}')
+    print(f' ► # train PPIs = {len(X_train)}')
+    print(f' ► train +/- label counts: {label_counts_train}')
+    print(f' ► # test PPIs = {len(X_test)}')
+    print(f' ► test +/- label counts: {label_counts_test}')
     return(X_train, y_train, X_test, y_test)
 
 def write_results(all_res, test_scores, model_name, outdir, fdr_cutoff):
@@ -166,15 +170,15 @@ def threshold_ppis(test_scores, all_res, fdr_cutoff):
     test_scores_pr = calc_pr(test_scores)
     thres_df = test_scores_pr[test_scores_pr['fdr'] <= fdr_cutoff]
     prob_cutoff = min(thres_df['ppi_score'])
-    print(f'PPI score cutoff for {int(fdr_cutoff*100)}% FDR: {prob_cutoff}')
+    print(f' ► PPI score cutoff for {int(fdr_cutoff*100)}% FDR: {prob_cutoff}')
     # theshold results
     thres_df = all_res[all_res['ppi_score'] >= prob_cutoff]
     ids = thres_df['ID'].str.split(' ', expand=True)
-    print(f'►  # total PPIs evaluated: {len(all_res)}')
-    print(f'►  # PPIs above threshold: {len(thres_df)}')
+    print(f' ► # total PPIs evaluated: {len(all_res)}')
+    print(f' ► # PPIs above threshold: {len(thres_df)}')
     try: # only works if there are no self-self PPIs
         uniq_prots = np.unique(ids[[0, 1]].values)
-        print(f'►  # unique proteins above threshold: {len(uniq_prots)}')
+        print(f' ► # unique proteins above threshold: {len(uniq_prots)}')
     except:
         print('WARNING: Problem with IDs detected.')
         print(ids[0:51])
@@ -185,8 +189,9 @@ def threshold_ppis(test_scores, all_res, fdr_cutoff):
 """ Main """
 def main():
     
+    t0 = time.time()
     ## read in data & define model params
-    print(f'Loading feature matrix ...')
+    print(f'[{dt.now()}] Loading feature matrix ...')
     with open(args.featmat, 'rb') as handle:
         fmat = pickle.load(handle)
     
@@ -195,10 +200,10 @@ def main():
     X, y, ids, groups = fmt_data(fmat, [1,-1], label_cols, data_cols, keep_groups=True)
     X_pred, y_pred, ids_pred = fmt_data(fmat, [0], label_cols, data_cols, keep_groups=False)
     
-    print(f'Loading complex group split method parameters ...')
+    print(f'[{dt.now()}] Loading complex group split method parameters ...')
     gs = def_grp_split(args.group_split_method, args.num_splits, args.train_size, args.seed)
     
-    print(f'Loading model parameters ...')
+    print(f'[{dt.now()}] Loading model parameters ...')
     model, model_name = load_model(args.model, args.seed)
     
     table = BeautifulTable()
@@ -212,7 +217,7 @@ def main():
     table.rows.append(["# features to be used", len(data_cols)])
     
     print()
-    print('Pipeline settings detected:')
+    print(f'[{dt.now()}] Pipeline settings detected:')
     print(table)
     print('*Note: Group split method will attempt to get as close to these settings as possible, but results may vary depending on the seed, group sizes, and number of cross-validation splits specified.')
     
@@ -221,11 +226,11 @@ def main():
         
         # get train/test splits
         print()
-        print(f"Getting test/train splits ({i+1}/{args.num_splits}) ...")
+        print(f"[{dt.now()}] Getting test/train splits ({i+1}/{args.num_splits}) ...")
         X_train, y_train, X_test, y_test = split_data(X, y, train_idx, test_idx)
           
         # fit model
-        print(f"Fitting {model_name} ...")
+        print(f"[{dt.now()}] Fitting {model_name} ...")
         model.fit(X_train, y_train)
           
         # extract results
@@ -233,7 +238,7 @@ def main():
         train_ids = ids[train_idx]
         pred_ids = ids_pred
           
-        print(f"Getting probability scores ...")
+        print(f"[{dt.now()}] Getting probability scores ...")
         test_scores = get_scores(model, X_test, y_test, test_ids)
         train_scores = get_scores(model, X_train, y_train, train_ids)
         pred_scores = get_scores(model, X_pred, y_pred, pred_ids)
@@ -250,6 +255,10 @@ def main():
           
         all_res = pd.concat([test_scores, train_scores, pred_scores])
         write_results(all_res, test_scores, out_name, args.outdir, args.fdr_cutoff)
+        
+    print(f"[{dt.now()}] ---------------------------------------------------------")
+    print(f"[{dt.now()}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")
+    print(f"[{dt.now()}] ---------------------------------------------------------")
 
 if __name__ == "__main__":
     

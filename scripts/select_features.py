@@ -12,6 +12,8 @@ import numpy as np
 import pickle
 import argparse
 import random
+import time
+from datetime import datetime as dt
 from sklearn.ensemble import *
 from sklearn.model_selection import *
 from sklearn.metrics import *
@@ -20,13 +22,14 @@ from sklearn.pipeline import make_pipeline
 from sklearn.feature_selection import RFECV
 from functools import reduce
 
+""" Functions """
 def load_data(fmat_file):
     # load data
     with open(fmat_file, 'rb') as handle:
         fmat = pickle.load(handle) 
     # print # +/- labels
-    print(f"Total # positive labels: {len(fmat[fmat['label']==1])}")
-    print(f"Total # negative labels: {len(fmat[fmat['label']==-1])}")
+    print(f" ► Total # positive labels: {len(fmat[fmat['label']==1])}")
+    print(f" ► Total # negative labels: {len(fmat[fmat['label']==-1])}")
     # define cols
     label_cols = ['ID', 'label', 'super_group']
     data_cols = [c for c in fmat.columns.values.tolist() if c not in label_cols]
@@ -44,7 +47,10 @@ def load_model(model_file, seed=None):
     except:
         model_name = type(model).__name__
         if seed:
-            print(f'WARNING: failed to set random state for {model} to {seed}!')
+            try:
+                setattr(model, 'random_state', seed)
+            except:
+                print(f'WARNING: failed to set random state for {model} to {seed}!')
     return(model, model_name)
 
 def def_grp_split(method='GroupShuffleSplit', num_splits=5, train_size=0.7, seed=None):
@@ -71,6 +77,23 @@ def fmt_arrays(fmat, label_cols, data_cols):
     y = fmat[label_cols[1]].to_numpy()
     groups = fmat[label_cols[2]].to_numpy()
     return(X, y, groups)
+
+def split_data(X, y, train_idx, test_idx):
+    # get splits
+    X_train = X[train_idx]
+    y_train = y[train_idx]
+    X_test = X[test_idx]
+    y_test = y[test_idx]
+    # check split & label balance
+    label, counts = np.unique(y_train, return_counts=True)
+    label_counts_train = dict(zip(label, counts))
+    label, counts = np.unique(y_test, return_counts=True)
+    label_counts_test = dict(zip(label, counts))
+    print(f' ► # train PPIs = {len(X_train)}')
+    print(f' ► train +/- label counts: {label_counts_train}')
+    print(f' ► # test PPIs = {len(X_test)}')
+    print(f' ► test +/- label counts: {label_counts_test}')
+    return(X_train, y_train, X_test, y_test)
 
 def set_rfe_params(model, step=7, min_feats=1, num_threads=4, seed=None):
     # extract estimator if TPOT pipeline passed to script
@@ -103,7 +126,7 @@ def fit_rfe(model, X_train, y_train):
 
 def plot_results(rfecv_fit, fold, X_test, y_test, outname, outdir):
     # plot results
-    print(f'Generating RFECV evaluation plots ...')
+    print(f' ► Generating RFECV evaluation plots ...')
     min_features_to_select=1
     # mean test accuracy vs number of feats selected
     import matplotlib.pyplot as plt
@@ -117,12 +140,12 @@ def plot_results(rfecv_fit, fold, X_test, y_test, outname, outdir):
         yerr=rfecv_fit.cv_results_["std_test_score"],
     )
     plt.title(f"Recursive feature elimination\nwith correlated features (fold #{fold+1})")
-    print(f'►  Saving mean accuracy plot to {outdir+outname}_nfeats-vs-acc_internal_cvtest.png ...')
+    print(f' ► Saving mean accuracy plot to {outdir+outname}_nfeats-vs-acc_internal_cvtest.png ...')
     plt.savefig(f'{outdir+outname}_nfeats-vs-acc_internal_cvtest.png', dpi=300, transparent=True)
     # PR curve
     from sklearn.metrics import PrecisionRecallDisplay
     PrecisionRecallDisplay.from_estimator(rfecv_fit, X_test, y_test)
-    print(f'►  Saving PR plot to {outdir+outname}_prcurve_holdout_test.png ...')
+    print(f' ► Saving PR plot to {outdir+outname}_prcurve_holdout_test.png ...')
     plt.savefig(f'{outdir+outname}_prcurve_holdout_test.png', dpi=300, transparent=True)
     
 def get_importances(rfecv_fit, data_cols, fold):
@@ -137,28 +160,30 @@ def get_importances(rfecv_fit, data_cols, fold):
     sel_feats_scored['fold'] = int(fold+1)
     return(sel_feats_scored)
 
+""" Main """
 def main():
     
+    t0 = time.time()
     # load & format data
-    print(f'Loading feature matrix ...')
+    print(f'[{dt.now()}] Loading feature matrix ...')
     fmat, label_cols, data_cols = load_data(args.featmat)
     X, y, groups = fmt_arrays(fmat, label_cols, data_cols)
     
-    print(f'Loading complex group split method parameters ...')
+    print(f'[{dt.now()}] Loading complex group split method parameters ...')
     gs = def_grp_split(args.group_split_method, args.num_splits, args.train_size, args.seed)
     
-    print(f'Loading model parameters...')
+    print(f'[{dt.now()}] Loading model parameters ...')
     model, model_name = load_model(args.model, args.seed)
 
     # define feature selector
-    print(f'Loading recursive feature selection parameters ...')
+    print(f'[{dt.now()}] Loading recursive feature selection parameters ...')
     rfecv_params = set_rfe_params(model, step=args.remove_per_step,
                                   min_feats=1, num_threads=args.threads)
     
     # get gss splits for each iteration
-    print()
-    print(f'----- Running recursive feature elimination for {args.num_splits} {args.group_split_method} train/test sets -----')
-    print()
+    print(f"[{dt.now()}] ---------------------------------------------------------")
+    print(f'[{dt.now()}] Running recursive feature elimination for {args.num_splits} {args.group_split_method} train/test sets')
+    print(f"[{dt.now()}] ---------------------------------------------------------")
     
     fold_df_lst = []
     optimal_n_dict = dict()
@@ -166,27 +191,15 @@ def main():
     # TODO: organize blocks into functions to make main() more readable
     for i, (test_idx, train_idx) in enumerate(gs.split(X, y, groups)):
         
-        print(f'Executing RFE for train/test split #{i+1} ...')
+        print(f'[{dt.now()}] Executing RFE for train/test split #{i+1} ...')
         
-        # define test/train splits
-        X_train = X[train_idx]
-        y_train = y[train_idx]
-        X_test = X[test_idx]
-        y_test = y[test_idx]
-        
-        # check split & label balance
-        label, counts = np.unique(y_train, return_counts=True)
-        label_counts_train = dict(zip(label, counts))
-        label, counts = np.unique(y_test, return_counts=True)
-        label_counts_test = dict(zip(label, counts))
-        print(f'# train PPIs = {len(X_train)}')
-        print(f' --> +/- label balance: {label_counts_train}')
-        print(f'# test PPIs = {len(X_test)}')
-        print(f' --> +/- label balance: {label_counts_test}')
-        
+        # get train/test splits
+        print(f"Getting test/train splits ({i+1}/{args.num_splits}) ...")
+        X_train, y_train, X_test, y_test = split_data(X, y, train_idx, test_idx)
+          
         # run rfe
         rfecv_fit = fit_rfe(rfecv_params, X_train, y_train)
-        
+
         # define output vars
         suffix = 'fold'+str(i+1)
         outname = f'top_feats_{model_name}_RFECV_{suffix}'
@@ -195,7 +208,7 @@ def main():
         # extract & write results
         plot_results(rfecv_fit, i, X_test, y_test, outname=outname, outdir=outdir)
         
-        print(f'►  Writing feature importances for train/test split #{i+1} to {outdir+outname}.csv ...')
+        print(f'[{dt.now()}] Writing feature importances for train/test split #{i+1} to {outdir+outname}.csv ...')
         featsel_df = get_importances(rfecv_fit, data_cols, i)
         featsel_df.to_csv(f'{outdir+outname}.csv', index=False)
         
@@ -204,7 +217,7 @@ def main():
         fold_df_lst.append(featsel_df)
         print()
 
-    print(f'Getting selected feature importances & summary stats across all folds ...')
+    print(f'[{dt.now()}] Getting selected feature importances & summary stats across all folds ...')
     all_res = pd.concat(fold_df_lst)
     gb = all_res.groupby(['feature'])
     counts = gb.size().to_frame(name='counts')
@@ -224,12 +237,16 @@ def main():
     optimal_n_dict.update({'avg': avg_n_feats})
     opt_n_df = pd.DataFrame(list(optimal_n_dict.items()), columns=['fold', 'num_optimal_features'])
     
-    print(f'# common features: {len(feat_intxn)}')
-    print(f'# optimal features averaged across all folds: {avg_n_feats}')
-    print(f'►  Writing summary results to {outdir} ...')
+    print(f'[{dt.now()}] # common features: {len(feat_intxn)}')
+    print(f'[{dt.now()}] # optimal features averaged across all folds: {avg_n_feats}')
+    print(f'[{dt.now()}] Writing summary results to {outdir} ...')
     agg_res.to_csv(outdir+f'top_feats_{model_name}_RFECV_all.csv', index=False)
     feat_intxn.to_csv(outdir+f'top_feats_{model_name}_RFECV_intersection.csv', index=False)
     opt_n_df.to_csv(outdir+f'top_feats_{model_name}_RFECV_optimalnum.csv', index=False)
+    
+    print(f"[{dt.now()}] ---------------------------------------------------------")
+    print(f"[{dt.now()}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")
+    print(f"[{dt.now()}] ---------------------------------------------------------")
 
 """ When executed from the command line: """
 if __name__ == "__main__":
