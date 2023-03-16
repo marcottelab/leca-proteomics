@@ -10,7 +10,8 @@ __license__ = "MIT"
 import argparse
 import pickle
 import numpy as np
-import datetime as dt
+from datetime import datetime as dt
+import time
 from tpot import TPOTClassifier
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.model_selection import GroupKFold
@@ -21,12 +22,10 @@ import matplotlib.pyplot as plt
 def fmt_data(fmat_file):
     
     # read in data
-    print(f'Reading in {fmat_file} ...')
     with open(fmat_file, 'rb') as handle:
         fmat = pickle.load(handle)
     
     # get train/test data
-    print(f'Extracting train/test data ...')
     fmat = fmat[fmat['label'].isin([-1,1])]
     fmat.sort_values('label', inplace=True, ascending=False)
     fmat.reset_index(inplace=True, drop=True)
@@ -36,7 +35,6 @@ def fmt_data(fmat_file):
     data_cols = [c for c in fmat.columns.values.tolist() if c not in label_cols]
 
     # make data, target, and group arrays
-    print(f'Formatting arrays ...')
     X = fmat[data_cols].to_numpy()
     y = fmat[label_cols[1]].to_numpy()
     groups = fmat[label_cols[2]].to_numpy()
@@ -60,17 +58,23 @@ def def_grp_split(method='GroupShuffleSplit', num_splits=5, train_size=0.7, seed
 
 """ Main """
 def main():
-
+    
+    t0 = time.time()
+    
+    print(f'[{dt.now()}] Extracting train/test data from {args.featmat}...')
+    X, y, groups = fmt_data(args.featmat)
+    
+    print(f'[{dt.now()}] Setting up group split method ...')
+    gs = def_grp_split(args.group_split_method, args.num_splits, args.train_size, args.seed)
+    
+    print(f'[{dt.now()}] Setting up TPOTClassifier() pipeline ...')
     pipeline_opt = TPOTClassifier()
     pipeline_opt = TPOTClassifier(generations=args.generations, population_size=args.pop_size, random_state=args.seed, cv=5, verbosity=2)
+    
     outfile = args.outdir+'tpot_pipeline'
     model_out = args.outdir+'tpot_model'
 
-    X, y, groups = fmt_data(args.featmat)
-
-    gs = def_grp_split(args.group_split_method, args.num_splits, args.train_size, args.seed)
-
-    print(f'Running TPOT for {args.num_splits} total {args.group_split_method} splits ...')
+    print(f'[{dt.now()}] Running TPOT for {args.num_splits} total {args.group_split_method} splits ...')
     for i, (test_idx, train_idx) in enumerate(gs.split(X, y, groups)):
 
         X_train = X[train_idx]
@@ -78,20 +82,23 @@ def main():
         X_test = X[test_idx]
         y_test = y[test_idx]
 
-        print(f'Running TPOT for split #{i+1}...')
+        print(f'[{dt.now()}] Running TPOT for split #{i+1}...')
         print(f"--> # train PPIs = {len(X[train_idx])}")
         print(f"--> # test PPIs = {len(X[test_idx])}")
 
         pipeline_opt.fit(X_train, y_train) 
-        print(pipeline_opt.score(X_test, y_test))
+        print(f'[{dt.now()}] Test set score: {pipeline_opt.score(X_test, y_test)}')
             
-        print(f"Writing TPOT results to {outfile+'_'+str(i+1)} ...")
+        print(f"[{dt.now()}] Writing TPOT results to {outfile+'_'+str(i+1)} ...")
         pipeline_opt.export(outfile+'_'+str(i+1))
         
-        print(f"Writing optimized TPOT model object to {model_out+'_'+str(i+1)}.pkl ...")
+        print(f"[{dt.now()}] Writing optimized TPOT model object to {model_out+'_'+str(i+1)}.pkl ...")
         model = pipeline_opt.fitted_pipeline_
         with open(f'{model_out}_{i+1}.pkl', 'wb') as f:
             pickle.dump(model,f)
+    
+    rt = round((time.time()-t0)/60, 2)
+    print(f'[{dt.now()}] Done! Total run time = {rt} minutes.')
 
 """ When executed from the command line: """
 if __name__ == "__main__":

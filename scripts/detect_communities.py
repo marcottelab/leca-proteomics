@@ -13,7 +13,7 @@ import igraph as ig
 import random
 import numpy as np
 import time
-import datetime as dt
+from datetime import datetime as dt
 
 """ Functions """
 def make_graph(score_file):
@@ -48,8 +48,7 @@ def walktrap(graph, n_steps=4, n_clusters=None):
 
 """ Main """
 def main():
-    
-    ct = dt.datetime.now()
+
     t0 = time.time()
     
     # set seed if specified
@@ -57,33 +56,33 @@ def main():
         random.seed(args.seed)
 
     # format data into igraph object
-    print(f'[{ct}] Loading scores into graph ...')
+    print(f'[{dt.now()}] Loading scores into graph ...')
     ppi_graph = make_graph(args.scores)
     total_prots = ppi_graph.vcount()
 
     # get dendrogram w/ optimal number of clusters
     # optimal number maximizes modularity of the network
-    print(f'[{ct}] Initializing walktrap with default parameters to find optimal number of clusters ...')
+    print(f'[{dt.now()}] Initializing walktrap with default parameters to find optimal number of clusters ...')
     df_opt = walktrap(ppi_graph)
     n_opt = len(df_opt.iloc[:,1].drop_duplicates())
-    print(f'[{ct}] Optimal # of clusters that maximize network modularity: ', n_opt)
+    print(f'[{dt.now()}] Optimal # of clusters that maximize network modularity: ', n_opt)
 
     # get range of cuts 
-    print(f'[{ct}] Computing dendogram cuts for more exclusive clusters ...')
+    print(f'[{dt.now()}] Computing dendogram cuts for more exclusive clusters ...')
     cuts = np.linspace(n_opt, total_prots, 8, endpoint=False)
     cuts = np.floor(cuts)
     cuts = np.delete(cuts, 0)
     
     # cut walktrap dendrogram for each cut
     df_list = []
-    print(f'[{ct}] Executing random walks with {args.steps} steps per vertice ... ')
+    print(f'[{dt.now()}] Executing random walks with {args.steps} steps per vertice ... ')
     for i in cuts:
-        print(f'[{ct}] Cutting dendrogram into {int(i)} clusters ...')
+        print(f'[{dt.now()}] Cutting dendrogram into {int(i)} clusters ...')
         clst = walktrap(ppi_graph, n_steps=args.steps, n_clusters=int(i))
         df_list.append(clst)
 
     # merge all cuts
-    print(f'[{ct}] Merging all walktrap cuts ...')
+    print(f'[{dt.now()}] Merging all walktrap cuts ...')
     for df in df_list:
         df_opt = df_opt.merge(df, how='left', on='ID')
 
@@ -93,17 +92,17 @@ def main():
 
     # join annotations if specified
     if args.annotations:
-        print(f'[{ct}] Joining annotations ...')
+        print(f'[{dt.now()}] Joining annotations ...')
         annot_df = pd.read_csv(args.annotations)
         df_out = df_out.merge(annot_df, how='left', on=['ID'])
 
     # write results
     outname = args.outfile.split('.csv', 1)[0]
-    print(f'[{ct}] Writing results to {outname}...')
+    print(f'[{dt.now()}] Writing results to {outname}...')
     df_out.to_csv(outname+'.csv', index=False)
     df_out.to_excel(outname+'.xlsx', index=False)
     rt = round((time.time()-t0)/60, 2)
-    print(f'[{ct}] Done! Total run time = {rt} minutes.')
+    print(f'[{dt.now()}] Done! Total run time = {rt} minutes.')
     
 if __name__ == "__main__":
     

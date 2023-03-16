@@ -14,7 +14,8 @@ import numpy as np
 import re
 import random
 import time
-import datetime as dt
+import os
+from datetime import datetime as dt
 from tqdm import tqdm
 from itertools import combinations
 from itertools import accumulate
@@ -28,7 +29,7 @@ Functions for iterative row-wise labeling:
 def make_fset(x, drop=True):
     if len(set(x.split(' '))) < 2:
         if drop == False:
-            print(f"[{ct}] WARNING: Features for '{x}' (self-self PPI) detected ...")
+            print(f"WARNING: Features for '{x}' (self-self PPI) detected ...")
             x1 = x.split(' ')[0]
             fset = frozenset({x1})
             return(fset)
@@ -99,7 +100,7 @@ def make_gs_dict(gs_file):
 # get all possible negative ppis
 def get_neg_ppis(gs_dict):
 
-    print(f'[{ct}] Getting proteins from gold standard PPIs to generate negative PPIs ...')
+    # get proteins from gold standard PPIs to generate negative PPIs
     random_prots = set()
     flat_gs_ppis = [pair for pair_list in list(gs_dict.values()) for pair in pair_list]
     print(f'--> # total possible gold standard PPIs = {len(set(flat_gs_ppis))}')
@@ -107,11 +108,11 @@ def get_neg_ppis(gs_dict):
     uniq_gs_prots = set(all_gs_prots)
     print(f'--> # unique gold standard prots = {len(set(uniq_gs_prots))}')
     
-    print(f'[{ct}] Getting all protein combinations ...')
+    print(f'--> Getting all protein combinations ...')
     fsets = [frozenset({i, j}) for i,j in list(combinations(list(uniq_gs_prots), 2))]
     print(f'--> # total pairwise PPIs = {len(fsets)}')
     
-    print(f'[{ct}] Removing known gold standard PPIs from all possible PPI combinations ...')
+    print(f'--> Removing known gold standard PPIs from all possible PPI combinations ...')
     neg_ppis = set(fsets).difference(set(flat_gs_ppis))
     
     # make sure there is no overlap between positive & negative PPI pairs
@@ -123,14 +124,13 @@ def get_neg_ppis(gs_dict):
 # get ppis actually osberved in data
 def find_obs_labels(fmat_file, all_neg_ppis, gs_dict):
     
-    print(f'[{ct}] Loading PPIs from {fmat_file}...')
     # TODO: add pickle or CSV option
     with open(fmat_file, 'rb') as handle:
         fmat = pickle.load(handle)
     fmat_ppis = [make_fset(i) for i in fmat['ID']]
     print(f'--> # total PPIs observed in data = {len(fmat_ppis)}')
     
-    print(f'[{ct}] Finding overlap between observed PPIs and gold standard PPIs ...')
+    print(f'--> Finding overlap between observed PPIs and gold standard PPIs ...')
     flat_gs_ppis = [pair for pair_list in list(gs_dict.values()) for pair in pair_list]
     neg_overlap = set(fmat_ppis).intersection(set(all_neg_ppis))
     pos_overlap = set(fmat_ppis).intersection(set(flat_gs_ppis))
@@ -145,7 +145,6 @@ def make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=None):
     if not num_neg_labels:
         num_neg_labels = 3*len(obs_pos)
     
-    print(f'[{ct}] Getting complex group labels ...')
     final_grp_nums = []
     pos_ppi_dict = dict()
     for grp, cmplx in gs_dict.items():
@@ -156,17 +155,17 @@ def make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=None):
     
     print(f'--> (# total GS groups in data)/(# total possible GS groups) = {len(pos_ppi_dict)}/{len(gs_dict)}')
     
-    print(f'[{ct}] Randomly sampling {num_neg_labels} negative PPIs from {len(obs_neg)} total observed negative PPIs ...')
+    print(f'--> Randomly sampling {num_neg_labels} negative PPIs from {len(obs_neg)} total observed negative PPIs ...')
     random.shuffle(list(obs_neg))
     neg_ppis = random.sample(list(obs_neg), num_neg_labels)
     neg_grp_nums = random.choices(final_grp_nums, k=num_neg_labels)
     
-    print(f'[{ct}] Assigning group numbers ...')
+    print(f'--> Assigning group numbers ...')
     neg_ppi_dict = dict()
     for i in range(len(neg_grp_nums)):
         neg_ppi_dict.update({neg_ppis[i]: int(neg_grp_nums[i])})
     
-    print(f'[{ct}] Finished generating positive and negative PPI labels!')
+    print(f'--> Finished generating positive and negative PPI labels!')
     return(neg_ppi_dict, pos_ppi_dict)
 
 # merges overlapping PPIs in different complexes into unique super groups
@@ -210,33 +209,43 @@ def make_sprgrp_dict(labeled_fmat):
 Functions for reading in, labeling, & writing out PPI feature matrices for input into ML pipeline:
 """
 
+def format_outdir(featmat, outfile_name=None):
+    # format outfile paths/names
+    if outfile_name:
+        path, filename = os.path.split(os.path.realpath(outfile_name))
+        outpath = path+'/'
+        fmat_out = outpath+'/'+outfile_name
+    else:
+        path, filename = os.path.split(os.path.realpath(featmat))
+        outpath = path+'/'
+        fmat_out = outpath+'/'+'featmat_labeled'
+    return(outpath, fmat_out)
+
 def label_fmat(fmat_file, pos_dict, neg_dict):
-    print(f'[{ct}] Loading features from {fmat_file}...')
     # TODO: add pickle or CSV option, eventually
     with open(fmat_file, 'rb') as handle:
         fmat = pickle.load(handle)
 
-    print(f'[{ct}] Formatting feature matrix ID columns & rows ...')
     fmat['frozen_pair'] = [make_fset(i, drop=True) for i in fmat['ID']]
     
     t0 = time.time()
-    print(f'[{ct}] Labeling feature matrix (takes awhile) ...')
+    
     # get all positive pairs
     pos_pairs = [pair for cmplx in list(pos_dict.values()) for pair in cmplx]
     # label pairs
     fmat['label'] = [match_label(i, pos_pairs, neg_dict) for i in tqdm(fmat['frozen_pair'])]
-    print(f'[{ct}] Labeling complex groups ...')
+    print(f'--> Labeling complex groups ...')
     fmat['group'] = [match_group(i, pos_dict, neg_dict) for i in tqdm(fmat['frozen_pair'])]
-    print(f'[{ct}] Total time to label {len(fmat)} rows: {time.time() - t0} seconds')
+    print(f'--> Total time to label {len(fmat)} rows: {time.time() - t0} seconds')
     
     num_pos = len(fmat[(fmat['label'] == 1)])
     num_neg = len(fmat[(fmat['label'] == -1)])
-    print(f'[{ct}] Total # positive PPIs = {num_pos}')
-    print(f'[{ct}] Total # negative PPIs = {num_neg}')
+    print(f'--> Total # positive PPIs = {num_pos}')
+    print(f'--> Total # negative PPIs = {num_neg}')
     
-    print(f'[{ct}] Generating merged complex groups ...')
+    print(f'--> Generating merged complex groups ...')
     sdict = make_sprgrp_dict(fmat)
-    print(f'[{ct}] Labeling non-redundant complex groups ...')
+    print(f'--> Labeling non-redundant complex groups ...')
     fmat['super_group'] = [match_spr_grp(i, sdict) for i in tqdm(fmat['group'])]
     return(fmat)
 
@@ -244,14 +253,13 @@ def format_fmat(labeled_fmat, keep_overlap_groups=False, shuffle_feats=False, sh
     # drop ID split cols
     #labeled_fmat.drop(['ID1', 'ID2'], axis=1, inplace=True)
     # get col names for labels, features
-    print(f'[{ct}] Reformatting columns ...')
     labeled_fmat.drop(['frozen_pair'], axis=1, inplace=True)
     label_cols = ['ID', 'group', 'super_group', 'label']
     feature_cols = [c for c in labeled_fmat.columns.values.tolist() if c not in label_cols]
     
     # optionally shuffle feature order
     if shuffle_feats:
-        print(f'[{ct}] Shuffling feature columns ...')
+        print(f'--> Shuffling feature columns ...')
         random.shuffle(feature_cols)
     
     # reorder columns
@@ -260,14 +268,14 @@ def format_fmat(labeled_fmat, keep_overlap_groups=False, shuffle_feats=False, sh
     # optionally drop group_col with redundant PPIs
     # probably always want to drop it tho tbh
     if not keep_overlap_groups:
-        print(f'[{ct}] Dropping redundant complex groups ...')
+        print(f'--> Dropping redundant complex groups ...')
         fmat_fmt = fmat_fmt.drop(['group'], axis=1)
     
     # optionally shuffle row order;
     # --> technically can be done later w/ sklearn.model_selection.GroupShuffleSplit
     # --> but it's here if you want to shuffle at this step for some reason
     if shuffle_rows:
-        print(f'[{ct}] Shuffling non-redundant protein complex super groups ...')
+        print(f'--> Shuffling non-redundant protein complex super groups ...')
         grps = fmat_fmt['super_group'].unique()
         random.shuffle(grps)
         fmat_fmt = fmat_fmt.set_index('super_group').loc[grps].reset_index()
@@ -278,41 +286,27 @@ def format_fmat(labeled_fmat, keep_overlap_groups=False, shuffle_feats=False, sh
 
 def write_fmat_files(labeled_fmat, fmat_file, outfile=None):
     
-    # write out matrices
-    print(f'[{ct}] Writing out matrices:')
-    print(f"[{ct}] \t► Full matrix (labeled + unlabeled) --> {outfile}")
-    print(f"[{ct}] \t► Positive & negative PPIs --> {outfile+'_traintest'}")
-    print(f"[{ct}] \t► Gold standard (positive) PPIs only --> {outfile+'_goldstd'}")
-    
     # gold standard (positive/known) PPIs only
     t1 = time.time()
-    print(f'[{ct}] Extracting gold standard PPIs ...')
     goldstd = labeled_fmat[(labeled_fmat['label'] == 1)]
     goldstd.reset_index(drop=True, inplace=True)
-    print(f"[{ct}] Writing serialized gold standard matrix to {outfile+'_goldstd.pkl'} ... ")
     goldstd.to_pickle(outfile+'_goldstd.pkl')
-    print(f"[{ct}] Writing comma-separated gold standard matrix to {outfile+'_goldstd'} ... ")
     goldstd.to_csv(outfile+'_goldstd', index=False)
-    print(f"[{ct}] Total time to write gold standard feature matrix of shape {goldstd.shape}: {time.time() - t1} seconds")
+    print(f"--> Total time to write gold standard feature matrix of shape {goldstd.shape}: {time.time() - t1} seconds")
     
     # positive + negative PPIs only
     t2 = time.time()
-    print(f'[{ct}] Extracting train/test rows ...')
     traintest = labeled_fmat[(labeled_fmat['label'] == 1) | (labeled_fmat['label'] == -1)]
     traintest.reset_index(drop=True, inplace=True)
-    print(f"[{ct}] Writing serialized train/test matrix to {outfile+'_traintest.pkl'} ... ")
     traintest.to_pickle(outfile+'_traintest.pkl')
-    print(f"[{ct}] Writing comma-separated train/test matrix to {outfile+'_traintest'} ... ")
     traintest.to_csv(outfile+'_traintest', index=False)
-    print(f"[{ct}] Total time to write train/test feature matrix of shape {traintest.shape}: {time.time() - t2} seconds")
+    print(f"--> Total time to write train/test feature matrix of shape {traintest.shape}: {time.time() - t2} seconds")
     
     # all data, labeled & unlabeled
     t3 = time.time()
-    print(f"[{ct}] Writing full serialized matrix to {outfile+'.pkl'} ... ")
     labeled_fmat.to_pickle(outfile+'.pkl')
-    print(f"[{ct}] Writing full comma-separated matrix to {outfile} ... ")
     labeled_fmat.to_csv(outfile, index=False)
-    print(f"[{ct}] Total time to write full feature matrix of shape {labeled_fmat.shape}: {time.time() - t3} seconds")
+    print(f"--> Total time to write full feature matrix of shape {labeled_fmat.shape}: {time.time() - t3} seconds")
 
 """ All wrapped together: """
 def main():
@@ -324,45 +318,46 @@ def main():
         random.seed(args.seed)
         
     # format outfile paths/names
-    if args.outfile_name:
-        fmat_outfile = args.outfile_name
-        path = fmat_outfile.split('/', -1)
-        outpath = '/'.join(path[:-1])+'/'
-        pos_ppi_outfile = outpath+'positive_ppi_dict.pkl'
-        neg_ppi_outfile = outpath+'negative_ppi_dict.pkl'
-    else:   
-        path = args.featmat.split('/', -1)
-        outpath = '/'.join(path[:-1])+'/'
-        fmat_outfile = outpath+'featmat_labeled'
-        pos_ppi_outfile = outpath+'positive_ppi_dict.pkl'
-        neg_ppi_outfile = outpath+'negative_ppi_dict.pkl'
+    outpath, fmat_outfile = format_outdir(args.featmat, args.outfile_name)
+    print(f'[{dt.now()}] Output directory: {outpath}')
+    pos_ppi_outfile = outpath+'positive_ppi_dict.pkl'
+    neg_ppi_outfile = outpath+'negative_ppi_dict.pkl'
         
     # make dicts for +/- labels
-    print(f'[{ct}] Generating grouped positive PPI labels from gold standard complexes ...')
+    print(f'[{dt.now()}] Generating grouped positive PPI labels from gold standard complexes ...')
     gs_dict = make_gs_dict(args.gold_std_file)
+    print(f'[{dt.now()}] Getting proteins from gold standard PPIs to generate negative PPIs ...')
     all_neg_ppis = get_neg_ppis(gs_dict)
+    print(f'[{dt.now()}] Loading PPIs from {args.featmat}...')
     obs_neg, obs_pos = find_obs_labels(args.featmat, all_neg_ppis, gs_dict)
+    print(f'[{dt.now()}] Getting complex group labels ...')
     neg_dict, pos_dict = make_label_dicts(obs_neg, obs_pos, gs_dict, num_neg_labels=args.num_negatives)
     
     # write out positive/negative ppis
     with open(pos_ppi_outfile, 'wb') as handle:
         pickle.dump(pos_dict, handle)
-        
     with open(neg_ppi_outfile, 'wb') as handle:
         pickle.dump(neg_dict, handle)
         
     # label feature matrix
+    print(f'[{dt.now()}] Labeling feature matrix (takes awhile) ...')
     labeled_fmat = label_fmat(args.featmat, pos_dict, neg_dict)
     
     # format feature matrix
+    print(f'[{dt.now()}] Reformatting feature matrix columns ...')
     fmat_out = format_fmat(labeled_fmat, args.keep_cmplx_overlap, args.shuffle_feats, args.shuffle_rows)
         
     # write final feature matrix results
-    write_fmat_files(fmat_out, args.featmat, fmat_outfile)
+    # write out matrices
+    print(f'[{dt.now()}] Writing out matrices:')
+    print(f"[{dt.now()}] \t► Full matrix (labeled + unlabeled) --> {outfile}")
+    print(f"[{dt.now()}] \t► Positive & negative PPIs --> {outfile+'_traintest'}")
+    print(f"[{dt.now()}] \t► Gold standard (positive) PPIs only --> {outfile+'_goldstd'}")
+    write_fmat_files(fmat_outfile, args.featmat, fmat_outfile)
         
-    print(f"[{ct}] ---------------------------------------------------------")
-    print(f"[{ct}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")
-    print(f"[{ct}] ---------------------------------------------------------")
+    print(f"[{dt.now()}] ---------------------------------------------------------")
+    print(f"[{dt.now()}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")
+    print(f"[{dt.now()}] ---------------------------------------------------------")
     
 
 """ When executed from the command line: """
@@ -401,5 +396,4 @@ if __name__ == "__main__":
         version="%(prog)s (version {version})".format(version=__version__))
 
     args = parser.parse_args()
-    ct = dt.datetime.now()
     main()
