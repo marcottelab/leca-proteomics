@@ -75,16 +75,14 @@ def main():
     model_out = args.outdir+'tpot_model'
 
     print(f'[{dt.now()}] Running TPOT for {args.num_splits} total {args.group_split_method} splits ...')
-    for i, (test_idx, train_idx) in enumerate(gs.split(X, y, groups)):
-
-        X_train = X[train_idx]
-        y_train = y[train_idx]
-        X_test = X[test_idx]
-        y_test = y[test_idx]
+    for i, (train_idx, test_idx) in enumerate(gs.split(X, y, groups)):
+            
+        X_train, y_train = X[train_idx], y[train_idx]
+        X_test, y_test = X[test_idx], y[test_idx]
 
         print(f'[{dt.now()}] Running TPOT for split #{i+1} ...')
-        print(f"--> # train PPIs = {len(X[train_idx])}")
-        print(f"--> # test PPIs = {len(X[test_idx])}")
+        print(f"--> # train PPIs = {len(X_train)}")
+        print(f"--> # test PPIs = {len(X_test)}")
 
         pipeline_opt.fit(X_train, y_train) 
         print(f'[{dt.now()}] Test set score for split #{i+1}: {pipeline_opt.score(X_test, y_test)}')

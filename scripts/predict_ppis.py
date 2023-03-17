@@ -222,7 +222,7 @@ def main():
     print('*Note: Group split method will attempt to get as close to these settings as possible, but results may vary depending on the seed, group sizes, and number of cross-validation splits specified.')
     
     ## fit model, compute precision/recall, and output results
-    for i, (test_idx, train_idx) in enumerate(gs.split(X, y, groups)):
+    for i, (train_idx, test_idx) in enumerate(gs.split(X, y, groups)):
         
         # get train/test splits
         print()

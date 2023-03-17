@@ -189,7 +189,7 @@ def main():
     optimal_n_dict = dict()
     
     # TODO: organize blocks into functions to make main() more readable
-    for i, (test_idx, train_idx) in enumerate(gs.split(X, y, groups)):
+    for i, (train_idx, test_idx) in enumerate(gs.split(X, y, groups)):
         
         print(f'[{dt.now()}] Executing RFE for train/test split #{i+1} ...')
         
