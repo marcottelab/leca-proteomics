@@ -80,7 +80,7 @@ def main():
         X_train, y_train = X[train_idx], y[train_idx]
         X_test, y_test = X[test_idx], y[test_idx]
 
-        print(f'[{dt.now()}] Running TPOT for split #{i+1} ...')
+        print(f'[{dt.now()}] Running TPOT for split {args.group_split_method} #{i+1} ...')
         print(f"--> # train PPIs = {len(X_train)}")
         print(f"--> # test PPIs = {len(X_test)}")
 
