@@ -123,7 +123,7 @@ def fit_rfe(model, X_train, y_train):
     model.fit(X_train, y_train)
     print(f"Optimal number of features: {model.n_features_}")
     return(model)
-
+        
 def plot_results(rfecv_fit, fold, X_test, y_test, outname, outdir):
     # plot results
     print(f' ► Generating RFECV evaluation plots ...')
@@ -155,9 +155,15 @@ def get_importances(rfecv_fit, data_cols, fold):
     sel_feats_scored = sel_feats.head(rfecv_fit.n_features_)
     sel_feats_scored = sel_feats_scored.drop(['support'], axis=1)
     sel_feats_scored = sel_feats_scored.drop(['rank'], axis=1)
-    sel_feats_scored['mdi'] = rfecv_fit.estimator_.feature_importances_
-    sel_feats_scored = sel_feats_scored.sort_values('mdi')
+    try:
+        sel_feats_scored['mdi'] = rfecv_fit.estimator_.feature_importances_
+        sel_feats_scored = sel_feats_scored.sort_values('mdi')
+    except AttributeError:
+        coef_array = rfecv_fit.estimator_.coef_
+        sel_feats_scored['coef'] = coef_array.flatten()
+        sel_feats_scored = sel_feats_scored.sort_values(by='coef', key=abs, ascending=False)
     sel_feats_scored['fold'] = int(fold+1)
+    print(sel_feats_scored)
     return(sel_feats_scored)
 
 """ Main """
@@ -182,7 +188,8 @@ def main():
     
     # get gss splits for each iteration
     print(f"[{dt.now()}] ---------------------------------------------------------")
-    print(f'[{dt.now()}] Running recursive feature elimination for {args.num_splits} {args.group_split_method} train/test sets')
+    print(f'[{dt.now()}] Running recursive feature elimination for ')
+    print(f'[{dt.now()}] {args.num_splits} {args.group_split_method} train/test sets.')
     print(f"[{dt.now()}] ---------------------------------------------------------")
     
     fold_df_lst = []
@@ -198,7 +205,12 @@ def main():
         X_train, y_train, X_test, y_test = split_data(X, y, train_idx, test_idx)
           
         # run rfe
-        rfecv_fit = fit_rfe(rfecv_params, X_train, y_train)
+        try:
+            rfecv_fit = fit_rfe(rfecv_params, X_train, y_train)
+        except:
+            print(f'ERROR: {model_name} does not provide logic for feature selection.')
+            print('Please provide a model with a feature importance attribute (examples: ExtraTreesClassifier, LinearSVC, SGDClassifier).')
+            return
 
         # define output vars
         suffix = 'fold'+str(i+1)
@@ -221,12 +233,18 @@ def main():
     all_res = pd.concat(fold_df_lst)
     gb = all_res.groupby(['feature'])
     counts = gb.size().to_frame(name='counts')
+    
+    if 'mdi' in all_res.columns:
+        score = 'mdi'
+    else:
+        score = 'coef'
+        
     agg_res = (counts
                .join(gb.agg({'fold': lambda x: ', '.join(set(x.astype(str).dropna()))}).rename(columns={'fold': 'gss_folds'}))
-               .join(gb.agg({'mdi': 'mean'}).rename(columns={'mdi': 'mean_mdi'}))
-               .join(gb.agg({'mdi': 'min'}).rename(columns={'mdi': 'min_mdi'}))
-               .join(gb.agg({'mdi': 'max'}).rename(columns={'mdi': 'max_mdi'}))
-               .sort_values(['counts', 'mean_mdi'], ascending=[False, False])
+               .join(gb.agg({f'{score}': 'mean'}).rename(columns={f'{score}': f'mean_{score}'}))
+               .join(gb.agg({f'{score}': 'min'}).rename(columns={f'{score}': f'min_{score}'}))
+               .join(gb.agg({f'{score}': 'max'}).rename(columns={f'{score}': f'max_{score}'}))
+               .sort_values(['counts', f'mean_{score}'], key=abs, ascending=[False, False])
                .reset_index()
               )
     feat_intxn = agg_res[agg_res['counts'] == args.num_splits]
