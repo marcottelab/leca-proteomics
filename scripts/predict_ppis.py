@@ -111,20 +111,21 @@ def write_results(all_res, test_scores, model_name, outdir, fdr_cutoff):
     # format all scored PPIs
     all_res.sort_values('ppi_score', inplace=True, ascending=False)
     all_res.reset_index(inplace=True, drop=True)
-    print(f'Writing all scored PPIs to {all_out} ...')
+    print(f' ► Writing all scored PPIs to {all_out} ...')
     all_res.to_csv(all_out, index=False)
     # get PR curve & threshold PPIs at given FDR
     pr_curve, high_conf_ppis = threshold_ppis(test_scores, all_res, fdr_cutoff)
-    print(f'Writing precision-recall results to {pr_out} ...')
-    pr_curve.to_csv(pr_out)
-    print(f'Writing results to {high_conf_out} ...')
+    print(f' ► Writing precision-recall results to {pr_out} ...')
+    pr_curve.to_csv(pr_out, index=False
+                   )
+    print(f' ► Writing results to {high_conf_out} ...')
     high_conf_ppis.to_csv(high_conf_out, index=False)
 
 """ Functions for model fitting & evaluation """
 
 def calc_pr(df):
     # compute precision/recall
-    print(f"Computing precision/recall ...")
+    print(f" ► Computing precision/recall ...")
     tp_count = 0
     fp_count = 0
     p_list = []
@@ -151,8 +152,11 @@ def calc_pr(df):
     return(df)
 
 def get_scores(model, array, labels, ids):
-    # predict probability scores
-    scores = model.predict_proba(array)
+    # get scores
+    try:
+        scores = model.predict_proba(array)
+    except:
+        scores = model.predict_proba_lr(array)
     probabilities = np.split(scores, 2, axis=1)
     neg_prob = probabilities[0]
     pos_prob = probabilities[1]
@@ -182,7 +186,7 @@ def threshold_ppis(test_scores, all_res, fdr_cutoff):
     except:
         print('WARNING: Problem with IDs detected.')
         print(ids[0:51])
-    df_out = thres_df[['ID','ppi_score']]
+    df_out = thres_df[['ID','ppi_score','set']]
     return(test_scores_pr, df_out)
     
 
@@ -231,12 +235,24 @@ def main():
           
         # fit model
         print(f"[{dt.now()}] Fitting {model_name} ...")
-        model.fit(X_train, y_train)
+        
+        # check if model has predict probabilities functionality
+        if 'predict_proba' in dir(model[-1]):
+            model.fit(X_train, y_train)
+        # if not, add it and refit (required for SVMs)
+        else:
+            from sklearn.calibration import CalibratedClassifierCV
+            model = CalibratedClassifierCV(model) 
+            model.fit(X_train, y_train)
           
         # extract results
         test_ids = ids[test_idx]
         train_ids = ids[train_idx]
         pred_ids = ids_pred
+        
+        if len(test_ids) > len(train_ids) and args.num_splits == 1:
+            print("ERROR: Imbalanced train/test split. Try a different seed using the --seed argument.")
+            return
           
         print(f"[{dt.now()}] Getting probability scores ...")
         test_scores = get_scores(model, X_test, y_test, test_ids)
