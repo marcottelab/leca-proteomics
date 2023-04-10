@@ -101,13 +101,13 @@ get_cmplx <- function(cmplx_file, sep = ',',
       filter(orthogroup %in% cmplx_ids_ordered$ID) %>%  # (takes awhile)
       mutate(filter_col = paste(species, experiment, sep = " ")) %>%
       filter(filter_col %in% cmplx_rd_ranked$filter_col) %>%
-      mutate(line_size = 1.25)
+      mutate(line_size = 1)
     
   } else {
     
     cmplx_eluts <- cfms_nd %>%  # get complex from *ALL NORMALIZED* data
       filter(orthogroup %in% cmplx_ids_ordered$ID) %>%  # (takes awhile)
-      mutate(line_size = 1)
+      mutate(line_size = 0.8)
     
   }
   
@@ -115,8 +115,8 @@ get_cmplx <- function(cmplx_file, sep = ',',
     
     message("Extracting subset of species from each clade ...")
     
-    species_subset <- c("dicdi", "nemve", "brart", "human",  # amorphea
-                        "euggr", "tryb2",  # excavate
+    species_subset <- c("nemve", "brart", "strpu", "human",  # amorphea
+                        "euggr",  # excavate
                         "phatc", "tetts", "plakh",  # TSAR
                         "chlre", "selml", "maize", "arath")  # archaeplastida
     
