@@ -378,10 +378,10 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--outfile_name", action="store", default=None, help="(Optional) Specify the outfile path/name. Defaults are 'featmat_labeled' and 'featmat_labeled.pkl', written to the same directory containing the input.")
     
     # specify outfile name (default='featmat', written to the given data directory)
-    parser.add_argument("-n", "--num_negatives", action="store", default=None, help="(Optional) Specify max number of negative labels (default = 3X the number of positive labels).")
+    parser.add_argument("-n", "--num_negatives", action="store", default=None, type=int, help="(Optional) Specify max number of negative labels (default = 3X the number of positive labels).")
     
     # specify outfile name (default='featmat', written to the given data directory)
-    parser.add_argument("-s", "--seed", action="store", default=None, help="(Optional) Specify seed to make randomized negative PPIs reproducible.")
+    parser.add_argument("-s", "--seed", action="store", default=None, type=int, help="(Optional) Specify seed to make randomized negative PPIs reproducible.")
     
     # specify if you want to keep the redundant group col
     parser.add_argument("--keep_cmplx_overlap", action="store_true", default=False, help="(Optional) Specify if you want to keep protein complex group numbers with redundant PPIs. Default=False (only recommended to keep for running through sanity_checks.py, which will evaluate merge behavior).")
