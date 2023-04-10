@@ -13,6 +13,7 @@ import igraph as ig
 import random
 import numpy as np
 import time
+from functools import reduce
 from datetime import datetime as dt
 
 """ Functions """
@@ -65,12 +66,18 @@ def main():
     df_opt = walktrap(ppi_graph)
     n_opt = len(df_opt.iloc[:,1].drop_duplicates())
     print(f'[{dt.now()}] Optimal # of clusters that maximize network modularity:', n_opt)
-
     # get range of cuts 
+    print(f'[{dt.now()}] Computing dendogram cuts for more inclusive clusters ...')
+    front_cuts = np.linspace(10, n_opt, 3, endpoint=False)
+    front_cuts = np.delete(front_cuts, 0)
     print(f'[{dt.now()}] Computing dendogram cuts for more exclusive clusters ...')
-    cuts = np.linspace(n_opt, total_prots, 8, endpoint=False)
+    back_cuts = np.linspace(n_opt, total_prots, 8, endpoint=False)
+    
+    # format cuts
+    cuts = np.concatenate((front_cuts, back_cuts), axis=None)
     cuts = np.floor(cuts)
-    cuts = np.delete(cuts, 0)
+    np.sort(cuts)
+    print("Final # of clusters per cut:", cuts)
     
     # cut walktrap dendrogram for each cut
     df_list = []
@@ -78,16 +85,17 @@ def main():
     for i in cuts:
         print(f'[{dt.now()}] Cutting dendrogram into {int(i)} clusters ...')
         clst = walktrap(ppi_graph, n_steps=args.steps, n_clusters=int(i))
+        clst.set_index(['ID'], inplace=True)
         df_list.append(clst)
 
     # merge all cuts
     print(f'[{dt.now()}] Merging all walktrap cuts ...')
-    for df in df_list:
-        df_opt = df_opt.merge(df, how='left', on='ID')
+    df = reduce(lambda x, y: x.join(y, how='outer'), df_list)
 
     # sort clusters
-    sort_cols = df_opt.columns.values[1:].tolist()
-    df_out = df_opt.sort_values(sort_cols)
+    sort_cols = df.columns.values[1:].tolist()
+    print("Sort columns:", sort_cols)
+    df_out = df.sort_values(sort_cols)
 
     # join annotations if specified
     if args.annotations:

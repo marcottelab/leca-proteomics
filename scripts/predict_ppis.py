@@ -13,6 +13,7 @@ import numpy as np
 from datetime import datetime as dt
 import time
 import pandas as pd
+from functools import reduce
 from beautifultable import BeautifulTable
 from sklearn.ensemble import *
 from sklearn.model_selection import *
@@ -281,7 +282,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # specify feature matrix
-    parser.add_argument("-f", "--featmat", help="(Required) Path to labeled, grouped, and pickled feature matrix. PPI ID column is a column named 'ID' and protein names are separated by a space, positive/negative labels are given as 1/-1 in a column named 'label', groups are given in a column named 'super_group' (as output by label_featmat.py). ")
+    parser.add_argument("-f", "--featmat", help="(Required) Path to labeled, grouped, and pickled feature matrix. PPI ID column is a column named 'ID' and protein names are separated by a space, positive/negative labels are given as 1/-1 in a column named 'label', groups are given in a column named 'super_group' (as output by label_featmat.py).")
     
     # specify model
     parser.add_argument("-m", "--model", action="store", help="(Required) Path to (pickle) file containing a scikit-learn model object with pre-optimized parameters (e.g., as output by run_tpot.py).")
