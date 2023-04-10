@@ -240,11 +240,12 @@ def main():
         score = 'coef'
         
     agg_res = (counts
-               .join(gb.agg({'fold': lambda x: ', '.join(set(x.astype(str).dropna()))}).rename(columns={'fold': 'gss_folds'}))
+               .join(gb.agg({'fold': lambda x: ', '.join(set(x.astype(str).dropna()))}))
                .join(gb.agg({f'{score}': 'mean'}).rename(columns={f'{score}': f'mean_{score}'}))
                .join(gb.agg({f'{score}': 'min'}).rename(columns={f'{score}': f'min_{score}'}))
                .join(gb.agg({f'{score}': 'max'}).rename(columns={f'{score}': f'max_{score}'}))
-               .sort_values(['counts', f'mean_{score}'], key=abs, ascending=[False, False])
+               .join(gb.agg({f'{score}': 'std'}).rename(columns={f'{score}': f'stdev'}))
+               .sort_values(['counts', 'stdev', f'mean_{score}'], key=abs, ascending=[False, True, False])
                .reset_index()
               )
     feat_intxn = agg_res[agg_res['counts'] == args.num_splits]
