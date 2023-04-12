@@ -58,6 +58,7 @@ def main():
 
     level_df = df[df.level==args.level]
     out_df = level_df[['ProteinID', 'ID']]
+    out_df.to_csv(args.outfile, index=False, sep='\t')
         
 if __name__ == "__main__":
     """ This is executed when run from the command line """
