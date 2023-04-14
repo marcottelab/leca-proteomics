@@ -160,7 +160,7 @@ def calc_pr(df):
     df['fdr'] = f_list
     return(df)
 
-def get_scores(model, array, labels, ids):
+def get_scores(model, array, labels, ids, ap=False):
     # get scores
     try:
         scores = model.predict_proba(array)
@@ -176,6 +176,10 @@ def get_scores(model, array, labels, ids):
     df['ppi_score'] = pos_prob
     df.sort_values('ppi_score', inplace=True, ascending=False)
     df.reset_index(inplace=True, drop=True)
+    # get avg precision
+    if ap:
+        avg_prec = average_precision_score(labels, pos_prob)
+        return(df, avg_prec)
     return(df)
 
 def threshold_ppis(test_scores, all_res, fdr_cutoff):
@@ -235,6 +239,7 @@ def main():
     print('**IMPORTANT: GroupShuffleSplit method will attempt to get as close to the train/test settings as possible, but results may vary depending on the seed, group sizes, and number of splits specified. If using GroupShuffleSplit and test size is too low, try a different seed or decrease the input train size. GroupKFold will ignore this entirely and construct the splits such that each protein complex super group will appear in the test data at least once (e.g., a proper grouped cross-validation).')
     
     ## fit model, compute precision/recall, and output results
+    ap_dict = dict()
     for i, (train_idx, test_idx) in enumerate(gs.split(X, y, groups)):
         
         # get train/test splits
@@ -264,7 +269,7 @@ def main():
             return
           
         print(f"[{dt.now()}] Getting probability scores ...")
-        test_scores = get_scores(model, X_test, y_test, test_ids)
+        test_scores, avg_prec = get_scores(model, X_test, y_test, test_ids, ap=True)
         train_scores = get_scores(model, X_train, y_train, train_ids)
         pred_scores = get_scores(model, X_pred, y_pred, pred_ids)
         
@@ -275,11 +280,19 @@ def main():
         
         if args.num_splits > 1:
             out_name = f'{model_name}{i+1}'
+            ap_dict[i+1] = round(avg_prec, 2)
         else:
             out_name = model_name
           
         all_res = pd.concat([test_scores, train_scores, pred_scores])
         write_results(all_res, test_scores, out_name, args.outdir, args.fdr_cutoff)
+        
+    if args.num_splits > 1 and args.group_split_method == 'GroupKFold':
+        ap_df = pd.DataFrame.from_dict(ap_dict, orient='index')
+        ap_df = ap_df.reset_index().rename(columns={'index':'fold', 0:'average_precision'})
+        ap_out = args.outdir+'/'+model_name+'_GroupKFold_avg_precision.csv'
+        print(f'[{dt.now()}] Writing average precision scores for each fold to {ap_out} ...')
+        ap_df.to_csv(ap_out, index=False)
         
     print(f"[{dt.now()}] ---------------------------------------------------------")
     print(f"[{dt.now()}] Total run time: {round((time.time()-t0)/60, 2)} minutes.")
