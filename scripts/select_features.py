@@ -245,9 +245,18 @@ def main():
                .join(gb.agg({f'{score}': 'min'}).rename(columns={f'{score}': f'min_{score}'}))
                .join(gb.agg({f'{score}': 'max'}).rename(columns={f'{score}': f'max_{score}'}))
                .join(gb.agg({f'{score}': 'std'}).rename(columns={f'{score}': f'stdev'}))
-               .sort_values(['counts', 'stdev', f'mean_{score}'], key=abs, ascending=[False, True, False])
+               #.sort_values(['counts', 'stdev', f'mean_{score}'], key=abs, ascending=[False, True, False])
+               #.reset_index()
+              )
+    
+    agg_res['rsd'] = agg_res.stdev/agg_res[f'mean_{score}']
+    agg_res = (agg_res
+               .assign(rsd_sort=agg_res['rsd'].abs(), score_sort=agg_res[f'mean_{score}'].abs())
+               .sort_values(['counts', 'rsd_sort', 'score_sort'],ascending=[False, True, False])
+               .drop(['rsd_sort', 'score_sort'], 1)
                .reset_index()
               )
+    
     feat_intxn = agg_res[agg_res['counts'] == args.num_splits]
     
     # get & format results for optimal # of features

@@ -30,6 +30,9 @@ def get_features(fmat, label_cols, feature_file=None, n_feats2sel=None):
     else:
         fsel = pd.read_csv(feature_file)
         select_feats = fsel['feature'].head(int(n_feats2sel)).tolist()
+        print('Selected features:')
+        for i in select_feats:
+            print(f'{i}')
         data_cols = [c for c in all_cols if c not in label_cols and c in select_feats]
     return(data_cols)
     
@@ -90,15 +93,20 @@ def split_data(X, y, train_idx, test_idx):
     y_train = y[train_idx]
     X_test = X[test_idx]
     y_test = y[test_idx]
+    
     # check split & label balance
+    total = len(y_train)+len(y_test)
     label, counts = np.unique(y_train, return_counts=True)
     label_counts_train = dict(zip(label, counts))
     label, counts = np.unique(y_test, return_counts=True)
     label_counts_test = dict(zip(label, counts))
-    print(f' ► # train PPIs = {len(X_train)}')
+    
+    print(f' !!! ACTUAL TRAIN/TEST SPLIT !!!')
+    print(f' ► # train PPIs = {len(X_train)} ({round(len(X_train)/total*100, 2)} %)')
+    print(f' ► # test PPIs = {len(X_test)} ({round(len(X_test)/total*100, 2)} %)')
     print(f' ► train +/- label counts: {label_counts_train}')
-    print(f' ► # test PPIs = {len(X_test)}')
     print(f' ► test +/- label counts: {label_counts_test}')
+    
     return(X_train, y_train, X_test, y_test)
 
 def write_results(all_res, test_scores, model_name, outdir, fdr_cutoff):
@@ -216,15 +224,15 @@ def main():
     table.rows.append(["Protein complex split method", args.group_split_method])
     table.rows.append(["# train/test (CV) splits", args.num_splits])
     table.rows.append(["Machine learning method", model_name])
-    table.rows.append(["% data for training (approx*):", f'{int(args.train_size*100)}%'])
-    table.rows.append(["% data for testing (approx*):", f'{int((1-args.train_size)*100)}%'])
+    table.rows.append(["% data for training (approx**):", f'{int(args.train_size*100)}%'])
+    table.rows.append(["% data for testing (approx**):", f'{int((1-args.train_size)*100)}%'])
     table.rows.append(["% FDR threshold", f'{int(args.fdr_cutoff*100)}%'])
     table.rows.append(["# features to be used", len(data_cols)])
     
     print()
     print(f'[{dt.now()}] Pipeline settings detected:')
     print(table)
-    print('*Note: Group split method will attempt to get as close to these settings as possible, but results may vary depending on the seed, group sizes, and number of cross-validation splits specified.')
+    print('**IMPORTANT: GroupShuffleSplit method will attempt to get as close to the train/test settings as possible, but results may vary depending on the seed, group sizes, and number of splits specified. If using GroupShuffleSplit and test size is too low, try a different seed or decrease the input train size. GroupKFold will ignore this entirely and construct the splits such that each protein complex super group will appear in the test data at least once (e.g., a proper grouped cross-validation).')
     
     ## fit model, compute precision/recall, and output results
     for i, (train_idx, test_idx) in enumerate(gs.split(X, y, groups)):

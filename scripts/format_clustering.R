@@ -2,7 +2,7 @@ library(tidyverse)
 
 clstfile <- "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/cfmsflow_012022/results_lj/clustering.csv"
 elutfile <- "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/results/leca_euks_elut.filtdollo.filt150p.raw.csv"
-phylofile <- "/stor/work/Marcotte/project/rmcox/LECA/ms/cfms2/cfmsflow_012022/feature_filters/ids_exps_species.raw.150p.p3.clade_filt.csv"
+phylofile <- "/stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/ids_exps_species.raw.150p.p3.clade_filt.csv"
 
 clst <- readr::read_csv(clstfile)
 elut <- readr::read_csv(elutfile)
@@ -26,6 +26,7 @@ phy_fmt_fill <- phy_fmt_uniq %>%
   slice(1)
 
 phy_fmt_fill[is.na(phy_fmt_fill)] <- 0
+write_csv(phy_fmt_fill, "/stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/ids_clade_presence_absence.csv")
 
 clst_fmt <- clst %>%
   select(ID, matches("cut*"), matches("human*"), matches("arath*")) %>%

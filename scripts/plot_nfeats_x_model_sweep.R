@@ -15,7 +15,7 @@ data <- data_frame(filename = files) %>%
   mutate(model = str_extract(filename, '(?<=recall_).*(?=.csv)'))
 data
 
-fct_order <- c("5", "10", "25", "50", "100", "all")
+fct_order <- c("5", "10", "25", "50", "100", "250", "all")
 data$feature_set <- factor(data$feature_set, levels = fct_order)
 
 data %>%
@@ -24,16 +24,14 @@ data %>%
              color = feature_set, group = feature_set)) +
   geom_line(size = 1.25) +
   #scale_color_manual(values = pal, name = "# features") +
-  scale_color_brewer(type = "seq", palette = "YlGnBu", name = "# features") +
   theme(legend.position = "top") +
   guides(color = guide_legend(nrow=1, byrow=TRUE)) +
+  scale_color_brewer(type = "seq", palette = "YlGnBu", 
+                     name = "# features", guide = "none") +
   geom_hline(yintercept = 0.9, linetype='dotted') +
   annotate("text", x = 0.9, y = 0.9, label = "10% FDR", vjust = -0.5) +
-  facet_wrap(~model, ncol = 1)
-
-ggsave("../../figures/pr_curve_n-feat_x_model_comparison.png", device = "png", 
-       width = 6, height = 14, units = "in")
-
+  facet_wrap(~model, nrow = 1) -> p1
+p1
 
 ppi_files <- dir("feature_sweep", recursive = T, pattern = "scored_interactions_fdr10*", full.names = T)
 
@@ -48,9 +46,46 @@ options(scipen = 999)
 ppi_data$feature_set <- factor(ppi_data$feature_set, levels = fct_order)
 ppi_data %>%
   group_by(model, feature_set) %>%
+  filter(set == "predict") %>% 
   ggplot(aes(x = feature_set, fill = feature_set)) +
   geom_bar(position = "dodge") +
   scale_fill_brewer(type = "seq", palette = "YlGnBu", name = "# features") +
-  facet_wrap(~model, ncol = 1) +
-  labs(x = "", y = "# PPIs with FDR <= 10%")
-  
+  guides(fill = guide_legend(nrow=1, byrow=TRUE)) +
+  facet_wrap(~model, nrow = 1) +
+  labs(x = "", y = "# predicted PPIs\nwith FDR <= 10%") -> p2
+
+set_counts <- ppi_data %>%
+  group_by(model, feature_set, set) %>%
+  tally() %>%
+  arrange(desc(n))
+
+prot_counts <- ppi_data %>%
+  separate(ID, c("ID1", "ID2")) %>%
+  pivot_longer(ID1:ID2, values_to = "IDs") %>%
+  select(-name, -ppi_score, -set) %>% 
+  unique() %>%
+  group_by(model, feature_set) %>%
+  tally() %>%
+  arrange(desc(n))
+
+prot_counts$feature_set <- factor(prot_counts$feature_set, levels = fct_order)
+prot_counts %>%
+  group_by(model, feature_set) %>%
+  ggplot(aes(x = feature_set, y = n, fill = feature_set)) +
+  geom_col(position = "dodge") +
+  scale_fill_brewer(type = "seq", palette = "YlGnBu", name = "# features") +
+  guides(fill = guide_legend(nrow=1, byrow=TRUE)) +
+  facet_wrap(~model, nrow = 1) +
+  labs(x = "", y = "# unique proteins in PPIs\nwith FDR <= 10%") -> p3
+
+library(patchwork)
+panel <- p1 / p2 / p3 + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "top", legend.box.just = "center") & 
+  guides(color = "none")
+panel
+
+# panel %>% ggsave("../../figures/n-feat_x_model_comparison_panel.png", ., device = "png", 
+#              width = 10, height = 10, units = "in")
+# panel %>% ggsave("../../figures/n-feat_x_model_comparison_panel.pdf", ., device = "pdf", 
+#              width = 10, height = 10, units = "in")

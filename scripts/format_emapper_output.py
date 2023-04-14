@@ -10,6 +10,7 @@ __license__ = "MIT"
 import argparse
 import re
 import pandas as pd
+from datetime import datetime as dt
 
 """ Functions """
 def format_results(ogs):
@@ -29,11 +30,17 @@ def format_results(ogs):
 """ Main """
 def main():
     
+    print(f'[{dt.now()}] Reading in {args.infile} ...')
     enog = pd.read_csv(args.infile, sep='\t')
+    
     enog.columns.values[0] = 'ProteinID'
     enog.columns.values[4] = 'ID'
     enog = enog[['ProteinID','ID']]
-
+    
+    print(f'Input format:')
+    print(enog)
+    
+    print(f'[{dt.now()}] Extracting orthogroup matches at each taxonomic level ...')
     results_dict = dict()
     for i in range(len(enog)):
         prot_id = enog['ProteinID'][i]
@@ -55,10 +62,18 @@ def main():
     df[['ID','level','taxonomy']] = pd.DataFrame(df.value.tolist(), index=df.index)
     df['level'] = df['level'].astype(int)
     df.drop(labels='value', axis=1, inplace=True)
-
+    
+    taxa_name = df[df.level==args.level]['taxonomy'].unique()[0]
+    print(f'[{dt.now()}] Extracting orthogroup matches at specified level (taxID={args.level}, name="{taxa_name}")')
     level_df = df[df.level==args.level]
     out_df = level_df[['ProteinID', 'ID']]
+    out_df.reset_index(inplace=True, drop=True)
+    print('Final results:')
+    print(out_df)
+    
+    print(f'[{dt.now()}] Writing formatted results to {args.outfile} ...')
     out_df.to_csv(args.outfile, index=False, sep='\t')
+    print(f'[{dt.now()}] Done!')
         
 if __name__ == "__main__":
     """ This is executed when run from the command line """
