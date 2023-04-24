@@ -250,6 +250,11 @@ def main():
         # fit model
         print(f"[{dt.now()}] Fitting {model_name} ...")
         
+        # have to reset the model object for every loop
+        # otherwise, if CalibratedClassifier is called during loop 1, it will error during subsequent loops
+        # TO DO: figure out a better way to handle this ...
+        model, model_name = load_model(args.model, args.seed)
+        
         # check if model has predict probabilities functionality
         if 'predict_proba' in dir(model[-1]):
             model.fit(X_train, y_train)

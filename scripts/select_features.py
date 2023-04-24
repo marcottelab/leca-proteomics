@@ -1,5 +1,5 @@
 """
-Script for performing recursive feature elimination for an Extra Trees Classifier, given a labeled feature matrix.
+Script for performing recursive feature elimination for a pickled scikit-learn model, given a labeled feature matrix.
 @author: Rachael Cox <rachaelcox@utexas.edu>
 """
 

@@ -68,15 +68,16 @@ def main():
     print(f'[{dt.now()}] Optimal # of clusters that maximize network modularity:', n_opt)
     # get range of cuts 
     print(f'[{dt.now()}] Computing dendogram cuts for more inclusive clusters ...')
-    front_cuts = np.linspace(10, n_opt, 3, endpoint=False)
-    front_cuts = np.delete(front_cuts, 0)
+    front_cuts = np.linspace(n_opt/2, n_opt*2, 6, endpoint=True)
+    front_cuts = np.insert(front_cuts, 1, n_opt)
     print(f'[{dt.now()}] Computing dendogram cuts for more exclusive clusters ...')
-    back_cuts = np.linspace(n_opt, total_prots, 8, endpoint=False)
+    back_cuts = np.linspace(n_opt*2, 0.75*total_prots, 4, endpoint=False)
+    back_cuts = np.delete(back_cuts, 0)
     
     # format cuts
     cuts = np.concatenate((front_cuts, back_cuts), axis=None)
     cuts = np.floor(cuts)
-    np.sort(cuts)
+    cuts = np.unique(cuts)
     print("Final # of clusters per cut:", cuts)
     
     # cut walktrap dendrogram for each cut
@@ -93,7 +94,7 @@ def main():
     df = reduce(lambda x, y: x.join(y, how='outer'), df_list)
 
     # sort clusters
-    sort_cols = df.columns.values[1:].tolist()
+    sort_cols = df.columns.values[0:].tolist()
     print("Sort columns:", sort_cols)
     df_out = df.sort_values(sort_cols)
 
