@@ -26,7 +26,8 @@ from functools import reduce
 def load_data(fmat_file):
     # load data
     with open(fmat_file, 'rb') as handle:
-        fmat = pickle.load(handle) 
+        fmat = pickle.load(handle)
+    fmat = fmat[(fmat['label']==1) | (fmat['label']==-1)]
     # print # +/- labels
     print(f" ► Total # positive labels: {len(fmat[fmat['label']==1])}")
     print(f" ► Total # negative labels: {len(fmat[fmat['label']==-1])}")
