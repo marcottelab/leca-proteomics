@@ -27,6 +27,8 @@ def get_features(fmat, label_cols, feature_file=None, n_feats2sel=None):
     all_cols = fmat.columns.values.tolist()
     if not feature_file:
         data_cols = [c for c in all_cols if c not in label_cols]
+    elif feature_file and not n_feats2sel:
+        data_cols = [c for c in all_cols if c not in label_cols]
     else:
         fsel = pd.read_csv(feature_file)
         select_feats = fsel['feature'].head(int(n_feats2sel)).tolist()
