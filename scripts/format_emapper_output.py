@@ -18,7 +18,10 @@ def format_results(ogs):
     res_fmt = []
     results = ogs.split(',')
     for i in results:
-        og = re.search(".*(?=@)", i)[0]
+        try:
+            og = re.search(".*(?=@)", i)[0]
+        except:
+            continue
         if og and og[0].isdigit():
             og = 'ENOG50'+og
         lvl = re.search("(?<=@).*(?=\|)", i)[0]
