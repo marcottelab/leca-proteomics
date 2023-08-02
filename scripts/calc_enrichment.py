@@ -70,11 +70,13 @@ def calc_binned_enrichment(df, ext_set):
     prob = (both/(both+ext_only))/(leca_only/(leca_only+neither))
     
     try:
-        log_odds = math.log(odds_ratio)
-        log_prob = math.log(prob)
         
-    except ValueError: # 0.5 is added to avoid indeterminate ratios (Haldane-Anscombe correction)
+        log_odds = math.log10(odds_ratio)
+        log_prob = math.log10(prob)
         
+    except ValueError: 
+        
+        # 0.5 is added to avoid indeterminate ratios (Haldane-Anscombe correction)
         leca_only = leca_only + 0.5
         ext_only = ext_only + 0.5
         neither = neither + 0.5
@@ -82,8 +84,8 @@ def calc_binned_enrichment(df, ext_set):
         
         odds_ratio = (both/ext_only)/(leca_only/neither)
         prob = (both/(both+ext_only))/(leca_only/(leca_only+neither))
-        log_odds = math.log(odds_ratio)
-        log_prob = math.log(prob)
+        log_odds = math.log10(odds_ratio)
+        log_prob = math.log10(prob)
                                    
     return(odds_ratio, log_odds, prob, log_prob)
 
