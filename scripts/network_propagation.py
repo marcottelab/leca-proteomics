@@ -6,8 +6,8 @@
 # 2) Rank nodes based on the new scores.
 # 3) Draw ROC curves and calculate AUROC.
 # 4) Compare to random.
-# 5) Provide the list of verNOG and human proteins.
-# Usage: [THIS SCRIPT] [NETWORK FILE] [NODE SETS]
+# 5) Provide list of input IDs and top hits.
+# Usage: python3 [THIS SCRIPT] --ppi_network [NETWORK FILE] --annotations [ANNOTATION FILE] --outfile_name [OUTFILE]
 
 import random
 import numpy as np
