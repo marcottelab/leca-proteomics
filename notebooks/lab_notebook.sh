@@ -1785,8 +1785,14 @@ for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/`
 --annotations /stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_plot_annots.csv \
 --outfile /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/networks/${x%.*}_ppigraph \
 --scan_layouts 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/networks/logs/${x%.*}.ppigraph.log"; done > cmds/generate_networks.sh
-cat cmds/generate_dotplots.sh | parallel -j8
+cat cmds/generate_networks.sh | parallel -j8
 
+# -----------------------------------------------
+# -- generate circle plots with complex colors --
+# -----------------------------------------------
+while read c; do echo "Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_circle_cmplx_labels.R \"${c}\""; done > cmds/plot_circle_labels.sh < cplot_cmplx_labels/cmplx_list.txt
+
+cat cmds/plot_circle_labels.sh | parallel -j12
 
 # ::::::::::::::::::::::::::::::::::::::::::
 # Get pep counts for each experiment
@@ -2188,7 +2194,6 @@ protein_complex_maps/preprocessing_util/complexes/split_complexes.py
 
 # pickle feats
 for x in `ls /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/features/`; do echo "python3 /stor/work/Marcotte/project/rmcox/leca/scripts/make_pkl.py -i ${x}; done" > pickle_feat_files.sh
-
 cat pickle_feat_files.sh | parallel -j16
 
 # build fmat
@@ -2197,99 +2202,187 @@ python3 /stor/work/Marcotte/project/rmcox/leca/scripts/build_featmat.py --direct
 # label fmat
 python3 /stor/work/Marcotte/project/rmcox/leca/scripts/label_featmat.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat.pkl --gold_std_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/gold_stds/all.gold.cmplx.noRibos.merged.txt --outfile_name /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled --seed 13 --shuffle_feats
 
-# running TPOT:
-python /indocker_repos/run_TPOT/train_TPOT.py --training_data featmat_labeled1 --outfile pipeline.py --template Selector-Classifier --selector_subset $SELECTORS_FORMATTED --classifier_subset $CLASSIFIERS_FORMATTED --id_cols 0 --n_jobs 20 --generations 10 --population_size 20 --labels -1 1 --temp_dir auto --groupcol traincomplexgroups --max_features_to_select 50
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/label_featmat.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat.pkl --gold_std_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/gold_stds/all.gold.cmplx.noRibos.merged.txt --outfile_name /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/featmat_labeled_all_groups --seed 13 --shuffle_feats --keep_cmplx_overlap
 
-# ::::::::::::::::::::::::::::::::::::::::::
-# ::::::::::::::::::::::::::::::::::::::::::
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/label_featmat.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat.pkl --gold_std_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/gold_stds/all.gold.cmplx.noRibos.merged.txt -o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/featmat_labeled_all_groups --seed 13 --shuffle_feats --keep_cmplx_overlap
 
-# go ahead and run my featmat through cfmsflow
-# template to copy a working cfmsflow directory:
-rsync -av --progress sourcefolder /destinationfolder --exclude thefoldertoexclude --exclude anotherfoldertoexclud
+# run tpot (model selection)
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/run_tpot.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled.pkl --outdir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/tpot/pre_featsel/ --group_split_method GroupShuffleSplit --num_splits 5 --train_size 0.7 --generations 10 --pop_size 20 --seed 13
 
-rsync -av --progress /stor/work/Marcotte/project/rmcox/programs/cfmsflow_010222 /stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623 --exclude output --exclude work
+# feature selection
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/select_features.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled_traintest.pkl --model /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/tpot/pre_featsel/tpot_model_3.pkl --outdir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/test/ --threads 12 --remove_per_step 3 --seed 13
 
-# ::::::::::::::::::::::::::::::::::::::::::
-# cfmsflow - step 3
-# ::::::::::::::::::::::::::::::::::::::::::
+# rerun tpot
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/run_tpot.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled_top100feats.pkl --outdir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/tpot/post_featsel/ --group_split_method GroupShuffleSplit --num_splits 3 --train_size 0.7 --generations 10 --pop_size 5 --seed 13
 
-# featmat path:
-/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_final
+# generate predictions (all features)
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/predict_ppis.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled.pkl --model /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/tpot/pre_featsel/tpot_model_3.pkl --outdir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/ppi_predict/all_feats/ --seed 13 
 
-# gold std path:
-/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/gold_stds/all.gold.cmplx.noRibos.txt
+# generate predictions (100 features)
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/predict_ppis.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled.pkl --model /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/tpot/pre_featsel/tpot_model_3.pkl --outdir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/ppi_predict/100_feats/ --feature_selection /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/feature_selection/featsel_xtrees_allres.csv --num_feats 100 --fdr_cutoff 0.1 --seed 13
 
-# run step 3:
-../nextflow main.nf -params-file parameters3.json
+# generate predictions (feature sweep)
+for x in 5 10 20; do python3 /stor/work/Marcotte/project/rmcox/leca/scripts/predict_ppis.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled.pkl --model /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/tpot/pre_featsel/tpot_model_3.pkl --outdir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/ppi_predict/${x}_feats/ --feature_selection /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/feature_selection/featsel_xtrees_allres.csv --num_feats ${x} --fdr_cutoff 0.1 --seed 13; done
 
-# ::::::::::::::::::::::::::::::::::::::::::
-# cfmsflow - step 4
-# ::::::::::::::::::::::::::::::::::::::::::
+# attempt to use claire's walktrap script
+python /stor/work/Marcotte/project/rmcox/programs/protein_complex_maps/protein_complex_maps/postprocessing_util/diffusion_clustering.py --input_edges /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/ppi_predict/20_feats/ppi_scores_fdr10.csv --sep , --threshold 0 --method walktrap --use_scores --outfile /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/walktrap/ppi_walktrap_clustering_fdr10_top20feats --header --id_cols ID --id_sep ' ' --weight_col ppi_score --steps 5 --annotation_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_eunog_annots.030721.csv --export_excel
 
-# existing featmat:
-/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_final
+python /stor/work/Marcotte/project/rmcox/programs/protein_complex_maps/protein_complex_maps/postprocessing_util/diffusion_clustering.py --input_edges /project/rmcox/misc/vy.pipeline/results/ppi_predict/top100_feats/scored_interactions_fdr10_ExtraTreesClassifier.csv --sep , --threshold 0 --method walktrap --use_scores --outfile /project/rmcox/misc/vy.pipeline/results/walktrap/walktrap_fdr10_top100feats --header --id_cols ID --id_sep ' ' --weight_col ppi_score --steps 5 --export_excel --annotation_file /project/vyqtdang/proteomes_eggNOG/human/Homo_sapiens_verNOG_2.1.9_collapsed_annot.tsv
 
-# labeled featmat:
-/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/featmat_labeled
+# my own walktrap script
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/detect_communities.py --scores /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/ppi_predict/20_feats/scored_interactions_fdr10_ExtraTreesClassifier.csv --steps 5 --seed 13 --outfile /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/test_new_walktrap/walktrap_test_5steps_bigger_cuts --annotations /stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_eunog_annots_complete.030721.csv
 
-# train/test paths:
-/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/goldstandard_filt.neg_test_ppis.ordered
+# try a range of walktrap steps:
+for i in {3..10}; do python /stor/work/Marcotte/project/rmcox/programs/protein_complex_maps/protein_complex_maps/postprocessing_util/diffusion_clustering.py --input_edges /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/test_walktrap/ppi_scores_fdr15.csv --sep , --threshold 0 --method walktrap --use_scores --outfile /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/test_walktrap/ppi_walktrap_clustering_${i}steps --header --id_cols ID --id_sep ' ' --weight_col ppi_score --steps ${i} --annotation_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_annotated.fmt.tsv --export_excel; done
 
-/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/goldstandard_filt.neg_train_ppis.ordered
+# --------------------------
+# testing all pipeline options
+# --------------------------
 
-/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/goldstandard_filt.test_ppis.ordered
+# testing outdir behavior:
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/label_featmat.py --featmat featmat.pkl --gold_std_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/gold_stds/all.gold.cmplx.noRibos.merged.txt --seed 13 --shuffle_feats 
 
-/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/goldstandard_filt.train_ppis.ordered
+# test group split methods: groupshufflesplit
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/run_tpot.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled_top100feats.pkl --outdir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/tpot/tests/gss/ --group_split_method GroupShuffleSplit --num_splits 5 --train_size 0.75 --generations 3 --pop_size 3 --seed 61
 
-# CV groups:
-/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/traincomplexgroups
+# test group split methods: groupkfold
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/run_tpot.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled_top100feats.pkl --outdir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/tpot/tests/gks --group_split_method GroupKFold --num_splits 5 --train_size 0.75 --generations 3 --pop_size 2 --seed 61 
 
-# run step 4:
-../nextflow main.nf -params-file parameters4.json
+# test group split methods: stratifiedgroupkfold
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/run_tpot.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/featmat_labeled.pkl --outdir /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/tpot/tests/sgs/ --group_split_method StratifiedGroupKFold --num_splits 5 --train_size 0.75 --generations 3 --pop_size 2 --seed 13 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/tpot/tests/sgs/sgs.log
 
-# ::::::::::::::::::::::::::::::::::::::::::
-# cfmsflow - step 5
-# ::::::::::::::::::::::::::::::::::::::::::
+# run sanity checks
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/sanity_checks.py --featmat_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/featmat_labeled_all_groups.pkl --results_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/ppi_predict/ppi_scores_all.csv
 
-# scored interactions:
-/stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/output/scored_interactions
+# run 
 
-# annotation file:
-/stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_human-arath_annotated.tsv
+# --------------------------
+# plasmologen
+# --------------------------
 
-# elution file:
-/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/elutions/leca_euks_elut.filtdollo.filt150p.raw.noheaders.csv
+Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_sparklines.R \
+-i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/uncharacterized_plasmalogen_complex.csv \
+-o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/uncharacterized_plasmalogen_complex.sparklines \
+--best_exp TRUE --sample_clades TRUE
 
-# run step 5:
-../nextflow main.nf -params-file parameters5.json
+Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_sparklines.R \
+-i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/uncharacterized_plasmalogen_complex.csv \
+-o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/uncharacterized_plasmalogen_complex_bestexp.sparklines.best_exp \
+--best_exp TRUE --sample_clades FALSE
 
-# ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-# rerun with test/train split from first run
-# ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_phylo_dots.R -i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/uncharacterized_plasmalogen_complex.csv -o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/uncharacterized_plasmalogen_complex.phylo
 
-# ::::::::::::::::::::::::::::::::::::::::::
-# cfmsflow - step 4
-# ::::::::::::::::::::::::::::::::::::::::::
+# hmmmm this is blank
+Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_scores.R -i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/uncharacterized_plasmalogen_complex.csv -o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/apms_scores/uncharacterized_plasmalogen_complex.apms_scores
 
-# train/test paths:
-/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.train_ppis.ordered
+# check proteasome to make sure it works
+Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_scores.R -i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/26S_Proteasome.csv -o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/26S_proteasome.apms_scores
 
-/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.neg_train_ppis.ordered
 
-/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.test_ppis.ordered
+Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_ppi_networks.R \
+--cmplx /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/${x} \
+--scores /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/results_lj.noribo/annotatedscores_top50k.fmt.csv \
+--annotations /stor/work/Marcotte/project/rmcox/leca/ppi_ml/annotations/leca_euNOGs_plot_annots.csv \
+--outfile /stor/work/Marcotte/project/rmcox/leca/ppi_ml/figures/networks/uncharacterized_plasmalogen_complex.ppigraph \
+--scan_layouts
 
-/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.train_ppis.ordered
+# --------------------------
+# tRNA-NMD3
+# --------------------------
 
-# groups:
-/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/traincomplexgroups
+Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_sparklines.R \
+-i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/tRNA_NMD3.csv \
+-o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/tRNA_NMD3.sparklines.best_exp.sample_clades \
+--best_exp TRUE --sample_clades TRUE
 
-# run step 4:
-../nextflow main.nf -params-file parameters4_oldTTsplit.json
+Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_sparklines.R \
+-i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/tRNA_NMD3.csv \
+-o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/tRNA_NMD3.sparklines.best_exp \
+--best_exp TRUE --sample_clades FALSE
 
-#
-"postrain": "/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.train_ppis.ordered",
-"negtrain": "/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.neg_train_ppis.ordered",
-"postest": "/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.test_ppis.ordered",
-"negtest": "/stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cfmsflow_012022/model_training_lj.noribo/goldstandard_filt.neg_test_ppis.ordered",
+# --------------------------
+# cry-ankyrin
+# --------------------------
 
-ls /stor/work/Marcotte/project/rmcox/programs/cfmsflow_012623/featmat_labeled
+Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_sparklines.R \
+-i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/cry_ankyrin.csv \
+-o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/cry_ankyrin.sparklines.best_exp.sample_clades \
+--best_exp TRUE --sample_clades TRUE
+
+Rscript /stor/work/Marcotte/project/rmcox/leca/scripts/plot_sparklines.R \
+-i /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/cry_ankyrin.csv \
+-o /stor/work/Marcotte/project/rmcox/leca/ppi_ml/results/cmplx_files/special_cases/cry_ankyrin.sparklines.best_exp \
+--best_exp TRUE --sample_clades FALSE
+
+# --------------------------
+# locate MSblender files
+# --------------------------
+
+# euglena
+find /MS/processed/leca/leca_level/euggr -name '*mzid' > euglena_MSGF_mzids.txt
+find /MS/processed/leca/leca_level/euggr -name '*tandemK.out.logE_hit_list_best' > euglena_tandemK_hits.txt
+find /MS/processed/leca/leca_level/euggr -name '*comet.pep.xml.xcorr_hit_list_best' > euglena_comet_hits.txt
+find /MS/processed/leca/leca_level/euggr/*/output -name '*group' > euglena_msblender_hits.txt
+
+
+# tetrahymena
+find /MS/processed/leca/leca_level/tetts -name '*mzid' > tetrahymena_MSGF_mzids.txt
+find /MS/processed/leca/leca_level/tetts -name '*tandemK.out.logE_hit_list_best' > tetrahymena_tandemK_hits.txt
+find /MS/processed/leca/leca_level/tetts -name '*comet.pep.xml.xcorr_hit_list_best' > tetrahymena_comet_hits.txt
+find /MS/processed/leca/leca_level/tetts/*/output -name '*group' > tetrahymena_msblender_grouped_hits.txt
+
+# pig
+find /MS/processed/leca/leca_level/pig -name '*mzid' > pig_MSGF_mzids.txt
+find /MS/processed/leca/leca_level/pig -name '*tandemK.out.logE_hit_list_best' > pig_tandemK_hits.txt
+find /MS/processed/leca/leca_level/pig -name '*comet.pep.xml.xcorr_hit_list_best' > pig_comet_hits.txt
+find /MS/processed/leca/leca_level/pig/*/output -name '*group' > pig_msblender_grouped_hits.txt
+
+# rotifer
+find /MS/processed/leca/leca_level/brart -name '*mzid' > rotifer_MSGF_mzids.txt
+find /MS/processed/leca/leca_level/brart -name '*tandemK.out.logE_hit_list_best' > rotifer_tandemK_hits.txt
+find /MS/processed/leca/leca_level/brart -name '*comet.pep.xml.xcorr_hit_list_best' > rotifer_comet_hits.txt
+find /MS/processed/leca/leca_level/brart/*/output -name '*group' > rotifer_msblender_grouped_hits.txt
+
+# mouse ESCs (iex_3, sec_1)
+( find /MS/processed/leca/leca_level/mouse/sec_1 -name '*mzid'; find /MS/processed/leca/leca_level/mouse/iex_3 -name '*mzid' ) > mouseESCs_MSGF_mzids.txt
+( find /MS/processed/leca/leca_level/mouse/sec_1 -name '*tandemK.out.logE_hit_list_best'; find /MS/processed/leca/leca_level/mouse/iex_3 -name '*tandemK.out.logE_hit_list_best' ) > mouseESCs_tandemK_hits.txt
+( find /MS/processed/leca/leca_level/mouse/sec_1 -name '*comet.pep.xml.xcorr_hit_list_best'; find /MS/processed/leca/leca_level/mouse/iex_3 -name '*comet.pep.xml.xcorr_hit_list_best' ) > mouseESCs_comet_hits.txt
+( find /MS/processed/leca/leca_level/mouse/sec_1/output -name '*group'; find /MS/processed/leca/leca_level/mouse/iex_3/output -name '*group' ) > mouseESCs_msblender_grouped_hits.txt
+
+
+
+# xenopus sperm (iex_1, sec_1)
+( find /MS/processed/leca/leca_level/xenla/sec_1 -name '*mzid'; find /MS/processed/leca/leca_level/xenla/iex_1 -name '*mzid' ) > xenla_sperm_MSGF_mzids.txt
+( find /MS/processed/leca/leca_level/xenla/sec_1 -name '*tandemK.out.logE_hit_list_best'; find /MS/processed/leca/leca_level/xenla/iex_1 -name '*tandemK.out.logE_hit_list_best' ) > xenla_sperm_tandemK_hits.txt
+( find /MS/processed/leca/leca_level/xenla/sec_1 -name '*comet.pep.xml.xcorr_hit_list_best'; find /MS/processed/leca/leca_level/xenla/iex_1 -name '*comet.pep.xml.xcorr_hit_list_best' ) > xenla_sperm_comet_hits.txt
+( find /MS/processed/leca/leca_level/xenla/sec_1/output -name '*group'; find /MS/processed/leca/leca_level/xenla/iex_1/output -name '*group' ) > xenla_sperm_msblender_grouped_hits.txt
+
+# --------------------------
+# generate test set for labeling example
+# --------------------------
+
+gfile="/stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/gold_stds/all.gold.cmplx.noRibos.merged.txt"
+
+while IFS=$' ' read -r -a x; do
+    grep ${x[0]} $gfile | grep ${x[1]}
+done < test_pairs.txt > gold_cmplx_test.txt
+
+sort -u gold_cmplx_test.txt > gold_cmplx_test.uniq.txt
+
+# get all complex lines where test pairs participate
+grep 'KOG0676' all.gold.cmplx.noRibos.merged.txt | grep 'KOG2046'
+
+# notebook for generating coded example data:
+# /stor/work/Marcotte/project/rmcox/leca/notebooks/eval_group_merge.ipynb
+
+# run the script on the test set
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/label_featmat.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/syntest_encoded/test_featmat_coded.pkl --gold_std_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/syntest_encoded/gold_cmplx_test_coded.txt --seed 13 --shuffle_feats --keep_cmplx_overlap --num_negatives 10 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/syntest_encoded/test_cmplx_labeling.log
+
+
+# --------------------------------------
+# calculate log odds
+# --------------------------------------
+
+# (1) get number of positive external (x)
+# (2) divide by bin size - x (P external + ratio)
+# (3) ???
