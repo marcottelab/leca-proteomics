@@ -212,13 +212,13 @@ def main():
         ranks = ranks_from_leave_one_out(network, node_scores, disease_nodes[diseaseID])
         
         egg_list = set(disease_nodes[diseaseID])
+        print(egg_list)
         hits = []
         rank_list = []
         
         for n, i in enumerate(ranks.index):
             rank_of_i = ranks[n]
-            if set(i) not in egg_list:
-                print(i, '\t', rank_of_i, '\t', disease_ids[diseaseID])
+            if i not in egg_list:
                 hits.append(i)
                 rank_list.append(rank_of_i)
             if args.num_hits:
