@@ -18,6 +18,24 @@ import argparse
 import matplotlib.pyplot as plt
 
 ''' Functions '''
+def get_ntwk_scores(network_file):
+    network = {}
+    node_scores = {}
+    with open(network_file) as NETWORK:
+        NETWORK.readline()
+        for line in NETWORK:
+            edge, edge_score = line.strip().split(',')
+            node1, node2 = edge.split(' ')	
+            node1, node2 = sorted([node1, node2])
+            network[(node1, node2)] = float(edge_score)
+            if node1 not in node_scores:
+                node_scores[node1] = 0.0
+            if node2 not in node_scores:
+                node_scores[node2] = 0.0
+    #print("How many nodes?", len(node_scores), sep="\t")
+    #print("How many edges?", len(network), sep="\t")
+    return network, node_scores
+
 def propagation(network, node_scores, node_set):
 	new_scores = node_scores.copy()
 	for edge in network:
@@ -30,10 +48,12 @@ def propagation(network, node_scores, node_set):
 	return new_scores
 
 def get_ranks(node_scores, ascend):
-	series = pd.Series(node_scores.values())
-	series.index = node_scores.keys()
-	ranks = series.rank(ascending=ascend)
-	return ranks
+    series = pd.Series(node_scores.values()) 
+    series.index = node_scores.keys()
+    # default .rank() params = highest scores will have the highest rank
+    # ties = average rank across group (e.g., a tie between rank 2 and rank 3 = both are assigned 2.5)
+    ranks = series.rank(ascending=ascend)
+    return ranks
 
 def ranks_from_leave_one_out(network, node_scores, node_set):
 	new_node_scores = propagation(network, node_scores, node_set)
@@ -92,24 +112,6 @@ def draw_curve_without_types(coordinates_for_graph):
 	plt.xlim([0, 1])
 	plt.ylim([0, 1])
 
-    
-def get_ntwk_scores(network_file):
-    network = {}
-    node_scores = {}
-    with open(network_file) as NETWORK:
-        NETWORK.readline()
-        for line in NETWORK:
-            edge, edge_score = line.strip().split(',')
-            node1, node2 = edge.split(' ')	
-            node1, node2 = sorted([node1, node2])
-            network[(node1, node2)] = float(edge_score)
-            if node1 not in node_scores:
-                node_scores[node1] = 0.0
-            if node2 not in node_scores:
-                node_scores[node2] = 0.0
-    #print("How many nodes?", len(node_scores), sep="\t")
-    #print("How many edges?", len(network), sep="\t")
-    return network, node_scores
 
 def get_disease_scores(disease_file, node_scores):
     node_dict = {}
@@ -200,20 +202,39 @@ def main():
     
     # format df output
     for diseaseID in sorted_diseaseID_AUC:
+        
+        # for random AUC calc
         nodes = random.sample(list(node_scores.keys()), len(disease_nodes[diseaseID]))
-        ranks = ranks_from_leave_one_out(network, node_scores, nodes)
-        random_auc = cal_TPR_FPR_AUC_for_RANDOM(nodes, network, ranks)
+        random_ranks = ranks_from_leave_one_out(network, node_scores, nodes)
+        random_auc = cal_TPR_FPR_AUC_for_RANDOM(nodes, network, random_ranks)
+        
+        # actual ranks
+        ranks = ranks_from_leave_one_out(network, node_scores, disease_nodes[diseaseID])
+        
         egg_list = set(disease_nodes[diseaseID])
-        top_hits = []
+        hits = []
+        rank_list = []
         
         for n, i in enumerate(ranks.index):
             rank_of_i = ranks[n]
             if set(i) not in egg_list:
-                top_hits.append(i)
-            if len(top_hits) == 10:
-                break
+                print(i, '\t', rank_of_i, '\t', disease_ids[diseaseID])
+                hits.append(i)
+                rank_list.append(rank_of_i)
+            if args.num_hits:
+                if len(hits) == args.num_hits:
+                    break
+                    
+        if args.one_file_per_disease:
+            df = ranks.to_frame().reset_index()
+            df.columns = ['ID', 'rank']
+            df['disease'] = disease_ids[diseaseID]
+            df['status'] = ['known' if i in egg_list else 'candidate' for i in df['ID']]
+            dis_fmt = disease_ids[diseaseID].replace(' ', '_')
+            df.to_csv(f'{out_prefix}_{dis_fmt}_ranked_ids.csv', index=False)
+            print(df)
                 
-        rows.append([diseaseID, disease_ids[diseaseID], len(disease_nodes[diseaseID]), sorted_diseaseID_AUC[diseaseID], random_auc, ";".join(top_hits)])
+        rows.append([diseaseID, disease_ids[diseaseID], len(disease_nodes[diseaseID]), sorted_diseaseID_AUC[diseaseID], random_auc, ";".join(hits)])
         
     df = pd.DataFrame(rows, columns=cols)
     df['input_nogs'] = egg_ids
@@ -232,11 +253,17 @@ if __name__ == "__main__":
     # specify disease file
     parser.add_argument("-d", "--disease_network", action="store", help="(Required) Path to tab-separated file with columns for disease ID, disease name, and a comma-separated list of associated eggNOG groups.")
     
+    # specify number of candidates to return (optional)
+    parser.add_argument("--num_hits", action="store", type=int, default=None, help="(Optional) Specify number of top candidates to return for each disease (default = all, ranked descending).")
+    
     # specify ID annotation file (optional)
     parser.add_argument("-a", "--annotations", action="store", default=None, help="(Optional) Specify a tab-separated file containing a table that maps eggNOG groups to human gene names.")
     
     # specify outfile name (optional)
     parser.add_argument("-o", "--outfile_name", action="store", default=None, help="(Optional) Specify the outfile path/name. Default is 'disease_propagation.csv' in the same directory as the input PPI network file.")
+    
+    # specify if you want a file with a ranked list for each disease (optional)
+    parser.add_argument("--one_file_per_disease", action="store_true", default=False, help="(Optional) Specify if you want a file with a ranked list for each disease.")
     
     args = parser.parse_args()
     main()
