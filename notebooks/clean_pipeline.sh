@@ -855,4 +855,41 @@ for exp in xlms y2h cx; do
 --int_filter_file ${proj_dir}/annotations/lists/leca_nogs.txt \
 --bin_width 10000 \
 --outfile_name ${proj_dir}/results/ext_val/${exp}_ext_enrichment_10k_bw.csv"
-done > cmds/calc_ext_enrich.sh
+done > cmds/calc_ext_enrich_10k.sh
+
+for exp in xlms y2h cx; do
+        echo "python3 ${script_dir}/calc_enrichment.py \
+--int_file ${proj_dir}/results/ppi_predict/feature_sweep/100/scored_interactions_all_LinearSVC.csv \
+--ext_file ${proj_dir}/data/validation/${exp}_fmt.csv \
+--int_filter_file ${proj_dir}/annotations/lists/leca_nogs.txt \
+--bin_width 1000 \
+--outfile_name ${proj_dir}/results/ext_val/${exp}_ext_enrichment_1k_bw.csv"
+done > cmds/calc_ext_enrich_1k.sh
+
+for exp in xlms y2h cx; do
+        echo "python3 ${script_dir}/calc_enrichment.py \
+--int_file ${proj_dir}/results/ppi_predict/feature_sweep/100/scored_interactions_all_LinearSVC.csv \
+--ext_file ${proj_dir}/data/validation/${exp}_fmt.csv \
+--int_filter_file ${proj_dir}/annotations/lists/leca_nogs.txt \
+--bin_width 45000 \
+--outfile_name ${proj_dir}/results/ext_val/${exp}_ext_enrichment_45k_bw.csv"
+done > cmds/calc_ext_enrich_45k.sh
+
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Crosslinking analysis
+# ::::::::::::::::::::::::::::::::::::::::::
+
+# map custom annotated fasta to eggnog groups
+/stor/work/Marcotte/project/rmcox/programs/eggnog-mapper-2.0.5/emapper.py -i xlink/data/fastas/tett_marcotte_annotations_fixed.fasta --output xlink/data/tetts_custom.diamond --no_file_comments -m diamond --cpu 16
+
+# format results
+python3 ../scripts/format_emapper_output.py -i data/eggnog/tetts_custom.diamond.emapper.annotations -o data/eggnog/tetts_custom.diamond.mapping.2759 -l 2759
+
+
+# ::::::::::::::::::::::::::::::::::::::::::
+# Disease network propagation
+# ::::::::::::::::::::::::::::::::::::::::::
+
+proj_dir="/stor/work/Marcotte/project/rmcox/leca/human_disease/network_propagation"
+python3 ../scripts/network_propagation.py --ppi_network ${proj_dir}/data/leca_map.csv --disease_network ${proj_dir}/data/disease_network.tsv --annotations ${proj_dir}/data/leca_id_map.tsv --outfile_name ${proj_dir}/results/leca_diseases_leave1out_auroc.tsv
