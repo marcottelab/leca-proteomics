@@ -892,4 +892,14 @@ python3 ../scripts/format_emapper_output.py -i data/eggnog/tetts_custom.diamond.
 # ::::::::::::::::::::::::::::::::::::::::::
 
 proj_dir="/stor/work/Marcotte/project/rmcox/leca/human_disease/network_propagation"
-python3 ../scripts/network_propagation.py --ppi_network ${proj_dir}/data/leca_map.csv --disease_network ${proj_dir}/data/disease_network.tsv --annotations ${proj_dir}/data/leca_id_map.tsv --outfile_name ${proj_dir}/results/leca_diseases_leave1out_auroc.tsv
+
+python3 ../scripts/network_propagation.py --ppi_network ${proj_dir}/data/leca_map.csv --disease_network ${proj_dir}/data/disease_network_w-fu.tsv --annotations ${proj_dir}/data/leca_id_map.tsv --outfile_name ${proj_dir}/results/leca_diseases_leave1out_auroc_top20_w-fu.csv --num_hits 20 --one_file_per_disease
+
+python3 ../scripts/network_propagation.py --ppi_network ${proj_dir}/data/leca_map.csv --disease_network ${proj_dir}/data/disease_network.tsv --annotations ${proj_dir}/data/leca_id_map.tsv --outfile_name ${proj_dir}/results/leca_diseases_leave1out_auroc_top50.csv --num_hits 50
+python3 ../scripts/network_propagation.py --ppi_network ${proj_dir}/data/leca_map.csv --disease_network ${proj_dir}/data/disease_network.tsv --annotations ${proj_dir}/data/leca_id_map.tsv --outfile_name ${proj_dir}/results/leca_diseases_leave1out_auroc_allranks.csv
+
+
+python3 ../scripts/network_propagation.py --ppi_network ${proj_dir}/data/leca_map.csv --disease_network ${proj_dir}/data/disease_network.tsv --annotations ${proj_dir}/data/leca_id_map.tsv --outfile_name ${proj_dir}/results/leca_diseases_leave1out_auroc_top25.csv --num_hits 25 --one_file_per_disease > log_file.txt
+
+
+python3 ../scripts/network_propagation.py --ppi_network ${proj_dir}/data/leca_map.csv --disease_network ${proj_dir}/data/disease_network_w-fu_sorted.tsv --annotations ${proj_dir}/data/leca_id_map.tsv --outfile_name ${proj_dir}/results/leca_diseases_leave1out_auroc_top20_w-fu_sorted.csv --num_hits 20 --one_file_per_disease

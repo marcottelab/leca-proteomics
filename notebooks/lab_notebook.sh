@@ -2376,13 +2376,13 @@ grep 'KOG0676' all.gold.cmplx.noRibos.merged.txt | grep 'KOG2046'
 # /stor/work/Marcotte/project/rmcox/leca/notebooks/eval_group_merge.ipynb
 
 # run the script on the test set
-python3 /stor/work/Marcotte/project/rmcox/leca/scripts/label_featmat.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/syntest_encoded/test_featmat_coded.pkl --gold_std_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/syntest_encoded/gold_cmplx_test_coded.txt --seed 13 --shuffle_feats --keep_cmplx_overlap --num_negatives 10 2>&1 | tee /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/syntest_encoded/test_cmplx_labeling.log
+python3 /stor/work/Marcotte/project/rmcox/leca/scripts/label_featmat.py --featmat /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/syntest_encoded/test_featmat_coded.pkl --gold_std_file /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/syntest_encoded/gold_cmplx_test_coded.txt --seed 13 --shuffle_feats --keep_cmplx_overlap --num_negatives 10 /stor/work/Marcotte/project/rmcox/leca/ppi_ml/data/featmats/test_group_merge/syntest_encoded/test_cmplx_labeling.log
 
 
 # --------------------------------------
-# calculate log odds
+# debugging network propagation
 # --------------------------------------
 
-# (1) get number of positive external (x)
-# (2) divide by bin size - x (P external + ratio)
-# (3) ???
+# get this table:
+# -------------------
+# ID | status | node score | rank | disease
