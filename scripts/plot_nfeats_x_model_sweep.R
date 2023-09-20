@@ -26,8 +26,7 @@ data %>%
   #scale_color_manual(values = pal, name = "# features") +
   theme(legend.position = "top") +
   guides(color = guide_legend(nrow=1, byrow=TRUE)) +
-  scale_color_brewer(type = "seq", palette = "YlGnBu", 
-                     name = "# features", guide = "none") +
+  scale_color_viridis_d(option = "F", name = "# features", guide = "none", direction = -1) +
   geom_hline(yintercept = 0.9, linetype='dotted') +
   annotate("text", x = 0.9, y = 0.9, label = "10% FDR", vjust = -0.5) +
   facet_wrap(~model, nrow = 1) -> p1
@@ -49,7 +48,7 @@ ppi_data %>%
   filter(set == "predict") %>% 
   ggplot(aes(x = feature_set, fill = feature_set)) +
   geom_bar(position = "dodge") +
-  scale_fill_brewer(type = "seq", palette = "YlGnBu", name = "# features") +
+  scale_fill_viridis_d(option = "F", name = "# features", guide = "none", direction = -1) +
   guides(fill = guide_legend(nrow=1, byrow=TRUE)) +
   facet_wrap(~model, nrow = 1) +
   labs(x = "", y = "# predicted PPIs\nwith FDR <= 10%") -> p2
@@ -73,10 +72,11 @@ prot_counts %>%
   group_by(model, feature_set) %>%
   ggplot(aes(x = feature_set, y = n, fill = feature_set)) +
   geom_col(position = "dodge") +
-  scale_fill_brewer(type = "seq", palette = "YlGnBu", name = "# features") +
+  scale_fill_viridis_d(option = "F", name = "# features", guide = "none", direction = -1) +
   guides(fill = guide_legend(nrow=1, byrow=TRUE)) +
   facet_wrap(~model, nrow = 1) +
   labs(x = "", y = "# unique proteins in PPIs\nwith FDR <= 10%") -> p3
+p3
 
 library(patchwork)
 panel <- p1 / p2 / p3 + 
@@ -85,7 +85,7 @@ panel <- p1 / p2 / p3 +
   guides(color = "none")
 panel
 
-# panel %>% ggsave("../../figures/n-feat_x_model_comparison_panel.png", ., device = "png", 
-#              width = 10, height = 10, units = "in")
-# panel %>% ggsave("../../figures/n-feat_x_model_comparison_panel.pdf", ., device = "pdf", 
-#              width = 10, height = 10, units = "in")
+panel %>% ggsave("../../figures/n-feat_x_model_comparison_panel_090723.png", ., device = "png",
+             width = 10, height = 10, units = "in")
+panel %>% ggsave("../../figures/n-feat_x_model_comparison_panel_090723.pdf", ., device = "pdf",
+             width = 10, height = 10, units = "in")

@@ -69,17 +69,19 @@ extract_ppi_scores <- function(scores_file, cmplx_fmt){
   
 }
 
-make_nodes_edges <- function(cmplx_fmt, cmplx_scores){
+make_nodes_edges <- function(cmplx_data, cmplx_scores){
   
   # made node list
-  nodes <- cmplx_fmt %>%
+  # "cmplx_data" is a df for 1 complex with 1 protein per row
+  nodes <- cmplx_data %>%
     select(ID) %>%
     rename(label = ID) %>%
-    rowid_to_column("id")
+    rowid_to_column("id") # give every node a unique number
   
-  # make edge list
+  # make edge list (cols names = "from", "to", "weight", "set", where weight will be edge thickness and set will be node color)
+  # "complex_scores" is a df from the pairwise ML scores file
   edges <- cmplx_scores %>%
-    rename(weight = P_1) %>% 
+    rename(weight = ppi_score) %>% 
     left_join(nodes, by = c("ID1" = "label")) %>%
     rename(from = id) %>%
     left_join(nodes, by = c("ID2" = "label")) %>%

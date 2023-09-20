@@ -16,6 +16,7 @@ parser$add_argument("-o", "--outfile", dest="outfile",
 parser$add_argument("-s", "--sep", dest="sep", default=",", help="Separator for infile (default = ',')")
 parser$add_argument("-e", "--best_exp", dest="best_exp", default=TRUE, help="Sub-sample each species for the best fractionation for the given complex (default = TRUE)")
 parser$add_argument("-c", "--sample_clades", dest="sample_clades", default=FALSE, help="Sub-sample each eukaryotic clade for the given complex (default = FALSE)")
+parser$add_argument("-l", "--species_list", dest="species_list", default=NULL, help="Provide a comma-separated list of species codes to include (example: brart,human,arath,yeast; default = NONE)")
 args <- parser$parse_args()
 
 # -----------------------------------------------------
@@ -55,7 +56,7 @@ clade_order <- c('Amorphea','Excavate','TSAR','Archaeplastida')
 # -----------------------------------------------------
 
 get_cmplx <- function(cmplx_file, sep = ',',
-                      best_exp = TRUE, sample_clades = FALSE){
+                      best_exp = TRUE, sample_clades = FALSE, species_list = NULL){
   
   # read in desired complx
   cmplx <- read_delim(cmplx_file, delim = sep)
@@ -115,10 +116,22 @@ get_cmplx <- function(cmplx_file, sep = ',',
     
     message("Extracting subset of species from each clade ...")
     
-    species_subset <- c("nemve", "brart", "strpu", "human",  # amorphea
-                        "euggr",  # excavate
-                        "phatc", "tetts", "plakh",  # TSAR
-                        "chlre", "selml", "maize", "arath")  # archaeplastida
+    if(!is.null(species_list)){
+      
+      species_subset <- unlist(strsplit(species_list, ","))
+      print(species_subset)
+      species_subset <- c(species_subset)
+      print(species_subset)
+
+      
+    } else {
+      
+      species_subset <- c("nemve", "brart", "strpu", "human",  # amorphea
+                          "euggr",  # excavate
+                          "phatc", "tetts", "plakh",  # TSAR
+                          "chlre", "selml", "maize", "arath")  # archaeplastida
+      
+    }
     
     cmplx_eluts <- cmplx_eluts %>%
       filter(species %in% species_subset) %>%  ## NOTE::FOR SPECIES SUBSETTING
@@ -229,11 +242,10 @@ generate_plot <- function(df, outfile){
 #################### wrapper ####################
 # -----------------------------------------------------
 plot_sparklines <- function(cmplx_file, sep = ',', 
-                            best_exp, sample_clades,
+                            best_exp, sample_clades, species_list,
                             outfile = NULL){
   
-  cmplx <- get_cmplx(cmplx_file, sep,
-                     best_exp, sample_clades)
+  cmplx <- get_cmplx(cmplx_file, sep, best_exp, sample_clades, species_list)
   cmplx_fmt <- fmt_df(cmplx)
   
   plot <- generate_plot(cmplx_fmt)
@@ -283,4 +295,6 @@ plot_sparklines <- function(cmplx_file, sep = ',',
   
 }
 
-plot_sparklines(cmplx_file = args$cmplx_file, outfile = args$outfile, sep = args$sep, best_exp = args$best_exp, sample_clades = args$sample_clades)
+plot_sparklines(cmplx_file = args$cmplx_file, outfile = args$outfile, sep = args$sep, 
+                best_exp = args$best_exp, sample_clades = args$sample_clades, 
+                species_list = args$species_list)

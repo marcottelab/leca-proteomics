@@ -27,7 +27,8 @@ data <- data_frame(filename = files) %>%
   mutate(n_steps = str_extract(filename, '(?<=fdr10_).*(?=steps_precision)')) %>%
   mutate(model = str_extract(filename, '(?<=step_sweep/).+?(?=_)')) %>%
   mutate(model_info = paste0(model, "\ntotal # OGs = ", n_prots, "\n10% FDR")) %>% 
-  select(-filename)
+  select(-filename) %>%
+  filter(n_steps == 4)
 data
 
 labels <- data %>% 
@@ -44,22 +45,38 @@ p <- ggplot(data, aes(x = recall, y = precision, color = model_info)) +
         legend.margin = margin(),
         legend.title = element_blank()) +
   labs(x = "Recall", y = "Precision") +
-  # geom_text_repel(data =  labels, aes(label = n_clusters),
-  #                 #point.padding = unit(1, "lines"),
-  #                 max.overlaps = Inf,
-  #                 box.padding = unit(1.25, "lines"),
-  #                 fontface = "bold",
-  #                 min.segment.length = unit(0, 'lines'),
-  #                 #show.legend = FALSE,
-  #                 nudge_y = -0.1
-  #                 ) +
+  geom_text_repel(data =  labels, aes(label = n_clusters),
+                  nudge_y = -0.075, nudge_x = 0.01,
+                  point.padding = unit(1, "lines"),
+                  size = 6,
+                  max.overlaps = Inf,
+                  box.padding = unit(1.25, "lines"),
+                  fontface = "bold",
+                  #min.segment.length = unit(0, 'lines'),
+                  show.legend = FALSE
+                  ) +
+  xlim(c(0,1)) + ylim(c(0,1)) +
   coord_fixed()
 p
 
-p %>% ggsave("figures/walktrap_precision-recall.png", ., device = "png",
+p %>% ggsave("figures/walktrap_precision-recall_4steps.png", ., device = "png",
               width = 8, height = 6, units = "in")
-p %>% ggsave("figures/walktrap_precision-recall.pdf", ., device = "pdf",
+p %>% ggsave("figures/walktrap_precision-recall_4steps.pdf", ., device = "pdf",
               width = 8, height = 6, units = "in")
+
+data %>%
+  filter(model == "LinearSVC") %>%
+  ggplot(aes(x = recall, y = precision, color = n_steps, group = n_steps)) +
+  geom_point(size = 10, alpha = 0.75) +
+  scale_color_manual(values = pal) +
+  theme(legend.position = "bottom",
+        legend.box = "vertical",
+        legend.margin = margin(),
+        legend.title = element_blank()) +
+  labs(x = "Recall", y = "Precision") +
+  xlim(c(0,1)) +
+  ylim(c(0,1)) +
+  coord_fixed()
   
 library(plotly)
 library(htmlwidgets)
@@ -72,8 +89,8 @@ plotly_data <- data %>%
          cluster_label = paste('# clusters:', n_clusters),
          hover_label = paste(model_label, precision_label, recall_label,
                              step_label, cluster_label,
-                             sep = '\n')) %>%
-  filter(n_steps == 4)
+                             sep = '\n')) 
+ #%>% filter(n_steps == 4)
 
 p_tmp <- ggplot(plotly_data, aes(x = recall, y = precision, color = model_info, text = hover_label)) +
   geom_point(size = 5, alpha = 0.75) +
