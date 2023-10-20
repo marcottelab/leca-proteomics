@@ -120,8 +120,6 @@ get_cmplx <- function(cmplx_file, sep = ',',
       
       species_subset <- unlist(strsplit(species_list, ","))
       print(species_subset)
-      species_subset <- c(species_subset)
-      print(species_subset)
 
       
     } else {

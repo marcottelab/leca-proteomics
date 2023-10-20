@@ -7,6 +7,7 @@ if (length(args)==0) {
 } else if (length(args)==1) {
   cmplx2label = args[1]
   outfile = paste0(cmplx2label, '.png')
+  outfile = gsub(" ", "_", outfile)
 }
 
 library(tidyverse)
@@ -20,6 +21,7 @@ pal_npg <- c("#E64B35", "#4DBBD5", "#00A087", "#3C5488",
              "#F39B7F", "#8491B4", "#91D1C2", "#DC0000",
              "#7E6148", "#B09C85")
 workdir <- "/stor/work/Marcotte/project/rmcox/leca/"
+cut_choice_status_col = 'final_status'
 
 # ------------------
 # functions
@@ -128,7 +130,7 @@ circlepack_fxn <- function(graph_annot, seed){
   
   base_layout_circlepack_format <- base_layout_circlepack +
     geom_node_circle(aes(fill = cmplx_label)) +  # node fill variable
-    scale_fill_manual(values = c("#E64B35", "#4DBBD5", "#F0E442", "grey90", "#3C5488", "#00A087"),
+    scale_fill_manual(values = c("#3C5488","#4DBBD5", "#E64B35", "#F0E442", "grey90", "#00A087"),
                       na.translate=F) + # node fill colors
     scale_color_manual(values = c("grey50") ,na.value = "grey50") +
     scale_size_manual(values = c(1), na.value = 0.5) + # set carefully; big nums freeze RStudio
@@ -145,25 +147,34 @@ circlepack_fxn <- function(graph_annot, seed){
 # ------------------
 
 # clusters & complexes
-clst_annot_file <- paste0(workdir, "ppi_ml/results/ppi_clustering/final_cmplx_annots_011823.csv") 
+clst_annot_file <- paste0(workdir, "ppi_ml/results/walktrap/LinearSVC_100feats_fdr10_4steps_nochloro_dynamic_algo_labels_092623.csv") 
 
 clst_annot <- read_csv(clst_annot_file) %>%
   mutate(human_family_size = str_count(human_gene_names_primary, ',')+1) %>%
   mutate(human_family_size = ifelse(is.na(human_family_size), 0, human_family_size)) %>% 
+  #mutate(human_genes_fmt = gsub(";", ",", human_gene_names_primary, fixed=TRUE)) %>%
   mutate(human_genes_fmt = str_replace_all(human_gene_names_primary, pattern = ";", replacement = ",")) %>% 
   mutate(human_genes_fmt = str_replace(human_gene_names_primary, "^([^,]*,[^,]*),.*", "\\1 ...")) %>%
   mutate(human_genes_fmt = str_replace(human_genes_fmt, ", ", "\n")) %>%
-  mutate(genes_fmt = ifelse(human_family_size != 0 & human_family_size <= 5, human_genes_fmt, ID)) %>% 
+  mutate(genes_fmt = ifelse(human_family_size != 0 & human_family_size <= 5, human_genes_fmt, ID)) %>%
+  rename(characterization_status = cut_choice_status_col) %>% 
   select(ID, human_gene_names_primary, human_genes_fmt, human_family_size, genes_fmt,
-         matches("cut_*"), notes, granulated_cmplx_name, characterization_status)
+         matches("cut_*"), granulated_cmplx_name, characterization_status)
 
 # format data
 pdf <- clst_annot %>%
-  filter(!is.na(characterization_status)) %>% 
+  filter(!is.na(characterization_status),
+         characterization_status != "Unclustered") %>% 
   mutate(characterization_status_fmt = case_when(characterization_status == "Known" ~ "Known protein complex",
-                                                 characterization_status == "Novel member" ~ "Novel association",
-                                                 characterization_status == "Uncharacterized" ~ "Uncharacterized protein complex",
-                                                 is.na(characterization_status) ~ "Unclear"))
+                                                 characterization_status == "Novel association" ~ "Novel association",
+                                                 characterization_status == "Uncharacterized" ~ "Uncharacterized PPI",
+                                                 TRUE ~ characterization_status)) 
+
+legend_order = c("Known protein complex","Novel association","Uncharacterized PPI",
+                 "Large heterogeneous complex")
+
+pdf$characterization_status_fmt <- factor(pdf$characterization_status_fmt,
+                                          levels = legend_order)
 
 # identify complex that will be labeled
 pdf_lab <- pdf %>%
@@ -171,7 +182,7 @@ pdf_lab <- pdf %>%
 
 # get cut cols
 cuts <- names(clst_annot[grepl("cut", names(clst_annot))])
-cuts_sel <- cuts[c(3,6,9)]
+cuts_sel <- cuts[c(6,8,9,10)]
 
 # format chosen clusters
 clusters_uniqued_long <- format_clst(pdf_lab, cuts_sel)
@@ -185,11 +196,11 @@ graph <- graph %>% activate("nodes") %>%
 
 message(sprintf("Plotting circle plot w/ %s highlighted ...", cmplx2label))
 # plot graph object
-circlepack_fxn(graph, 6)
+circlepack_fxn(graph, 13)
 
 # save output
 message(sprintf("Saving %s ...", outfile))
 figure_dir <- paste0(workdir, "ppi_ml/figures/cplot_cmplx_labels/")
-ggsave(paste0(figure_dir, outfile), device = "png", width = 8, height = 8, units = "in")
+ggsave(paste0(figure_dir, outfile), device = "png", width = 10, height = 10, units = "in")
 
 message("Done!")

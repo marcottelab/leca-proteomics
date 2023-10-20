@@ -110,14 +110,12 @@ p_int <- ggplotly(p_tmp, tooltip = c("text")) %>%
   )
 p_int
 
-widget_file_size <- function(p) {
-  d <- tempdir()
-  withr::with_dir(d, htmlwidgets::saveWidget(p, "index.html"))
-  f <- file.path(d, "index.html")
-  mb <- round(file.info(f)$size / 1e6, 3)
-  message("File is: ", mb," MB")
-}
-
-widget_file_size(p_int)
-
-saveWidget(p_int, "figures/walktrap_precision-recall_4steps_interactive.html", selfcontained = T, libdir = "lib")
+# widget_file_size <- function(p) {
+#   d <- tempdir()
+#   withr::with_dir(d, htmlwidgets::saveWidget(p, "index.html"))
+#   f <- file.path(d, "index.html")
+#   mb <- round(file.info(f)$size / 1e6, 3)
+#   message("File is: ", mb," MB")
+# }
+# widget_file_size(p_int)
+# saveWidget(p_int, "figures/walktrap_precision-recall_4steps_interactive.html", selfcontained = T, libdir = "lib")

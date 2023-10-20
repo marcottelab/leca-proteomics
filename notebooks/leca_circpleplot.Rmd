@@ -1,9 +1,3 @@
----
-title: "leca_circleplot"
-author: "Rachael M. Cox"
-date: "3/22/2022"
-output: html_document
----
 
 ```{r setup, include=FALSE}
 library(tidyverse)
@@ -21,15 +15,14 @@ cols_f <- colorRampPalette(RColorBrewer::brewer.pal(8, 'Spectral'))
 spectral <- as.vector(cols_f(8))
 
 workdir <- "/stor/work/Marcotte/project/rmcox/leca/"
+cut_choice_status_col = 'final_status'
 ```
 
 ## Load data
 
-//**TODO**: Cannot get semicolon-delimited entries formatted correctly; example: "H4C1; H4C2; H4C3; H4C4; H4C5;" ...
-
 ```{r}
 # clusters & complexes
-clst_annot_file <- paste0(workdir, "ppi_ml/results/ppi_clustering/final_cmplx_annots_011823.csv") 
+clst_annot_file <- paste0(workdir, "ppi_ml/results/walktrap/LinearSVC_100feats_fdr10_4steps_nochloro_dynamic_algo_labels_092523.csv") 
 
 clst_annot <- read_csv(clst_annot_file) %>%
   mutate(human_family_size = str_count(human_gene_names_primary, ',')+1) %>%
@@ -38,9 +31,10 @@ clst_annot <- read_csv(clst_annot_file) %>%
   mutate(human_genes_fmt = str_replace_all(human_gene_names_primary, pattern = ";", replacement = ",")) %>% 
   mutate(human_genes_fmt = str_replace(human_gene_names_primary, "^([^,]*,[^,]*),.*", "\\1 ...")) %>%
   mutate(human_genes_fmt = str_replace(human_genes_fmt, ", ", "\n")) %>%
-  mutate(genes_fmt = ifelse(human_family_size != 0 & human_family_size <= 5, human_genes_fmt, ID)) %>% 
+  mutate(genes_fmt = ifelse(human_family_size != 0 & human_family_size <= 5, human_genes_fmt, ID)) %>%
+  rename(characterization_status = cut_choice_status_col) %>% 
   select(ID, human_gene_names_primary, human_genes_fmt, human_family_size, genes_fmt,
-         matches("cut_*"), notes, granulated_cmplx_name, characterization_status)
+         matches("cut_*"), granulated_cmplx_name, characterization_status)
 ```
 
 ## Data exploration
@@ -96,11 +90,18 @@ clst_cmplx <- clst_annot %>%
 ```{r}
 # filter data
 pdf <- clst_annot %>%
-  filter(!is.na(characterization_status)) %>% 
+  filter(!is.na(characterization_status),
+         characterization_status != "Unclustered") %>% 
   mutate(characterization_status_fmt = case_when(characterization_status == "Known" ~ "Known protein complex",
-                                             characterization_status == "Novel member" ~ "Novel association",
-                                             characterization_status == "Uncharacterized" ~ "Uncharacterized protein complex",
-         is.na(characterization_status) ~ "Unclear")) 
+                                             characterization_status == "Novel association" ~ "Novel association",
+                                             characterization_status == "Uncharacterized" ~ "Uncharacterized PPI",
+         TRUE ~ characterization_status)) 
+
+legend_order = c("Known protein complex","Novel association","Uncharacterized PPI",
+                   "Large heterogeneous complex")
+
+pdf$characterization_status_fmt <- factor(pdf$characterization_status_fmt,
+                                          levels = legend_order)
 ```
 
 Functions:
@@ -184,7 +185,8 @@ plot_graph <- function(graph, labels = TRUE){
 
   circlepack_plants_highlight <- ggraph(graph, layout = 'circlepack') + 
     geom_node_circle(aes(  fill = set), size = 0.1, color = "grey50") +
-    scale_fill_manual(values = c(palette[4],  "yellow"), na.value = "white") + #light green "#c5f7d1
+    #scale_fill_manual(values = c(palette[4],  "yellow"), na.value = "white") + #light green "#c5f7d1
+    #scale_fill_manual(values = pal_npg) + 
     theme(legend.key.size = unit(0.2, "lines"),
           legend.position = "bottom",
           legend.text = element_text(size = 4)) +
@@ -204,14 +206,12 @@ plot_graph <- function(graph, labels = TRUE){
 }
 
 circlepack_fxn <- function(graph_annot, seed){
-
  
   set.seed(seed = seed)
   base_layout_circlepack <- ggraph(graph_annot, layout = 'circlepack')
-
   base_layout_circlepack_format <- base_layout_circlepack +
     geom_node_circle(aes(fill = characterization_status_fmt)) +  # node fill variable
-    scale_fill_manual(values = c("#E64B35", "#4DBBD5", "#F0E442", "grey90", "#3C5488", "#00A087"),
+    scale_fill_manual(values = c("#3C5488","#4DBBD5", "#E64B35", "#F0E442", "grey90", "#00A087"),
                       na.translate=F) + # node fill colors
     scale_color_manual(values = c("grey50") ,na.value = "grey50") +
     scale_size_manual(values = c(1), na.value = 0.5) + # set carefully; big nums freeze RStudio
@@ -236,7 +236,8 @@ circlepack_fxn <- function(graph_annot, seed){
 ```{r}
 # get cut cols
 cuts <- names(clst_annot[grepl("cut", names(clst_annot))])
-cuts_sel <- cuts[c(3,6,9)]
+# 7=796,8=1202,9=1608
+cuts_sel <- cuts[c(6,7,8)]
 
 # format chosen clusters
 clusters_uniqued_long <- format_clst(pdf, cuts_sel)
@@ -249,49 +250,13 @@ graph <- graph %>% activate("nodes") %>%
   left_join(pdf, by = c("name" = "ID"))
 
 # plot graph object
-p <- circlepack_fxn(graph, 6)
+p <- circlepack_fxn(graph, 666)
 
 # save output
 figure_dir <- paste0(workdir, "ppi_ml/figures/")
-#ggsave(paste0(figure_dir, "cplot_annot-status_021623.pdf"), device = "pdf", width = 8, height = 8, units = "in")
-#ggsave(paste0(figure_dir, "cplot_annot-status_021623.png"), device = "png", width = 8, height = 8, units = "in")
+ggsave(paste0(figure_dir, "cplot_annot-status_092523.png"), device = "png", width = 10, height = 10, units = "in")
+ggsave(paste0(figure_dir, "cplot_annot-status_092523.pdf"), device = "pdf", width = 10, height = 10, units = "in")
 
-ggsave(paste0(figure_dir, "cplot_annot-status_021623.svg"), device = "svg", width = 8, height = 8, units = "in")
-
-# get legend
-legend <- cowplot::get_legend(p)
-grid.newpage()
-grid.draw(legend)
-ggsave(paste0(figure_dir, "cplot_annot-status_legend_021623.svg"), device = "svg", width = 8, height = 8, units = "in")
-```
-
-## Test plot params
-
-```{r}
-# get cut cols
-cuts <- names(clst_annot[grepl("cut", names(clst_annot))])
-cuts_sel <- cuts[c(3,6,9)]
-
-# get subset
-test <- head(pdf, 500)
-
-# format chosen clusters
-clusters_uniqued_long <- format_clst(test, cuts_sel)
-
-# generate graph objct
-graph <- graph_clst(clusters_uniqued_long, cuts_sel)
-
-# join labels
-graph <- graph %>% activate("nodes") %>%
-  left_join(pdf, by = c("name" = "ID"))
-
-# plot graph object
-circlepack_fxn(graph, 6)
-
-# save output
-figure_dir <- paste0(workdir, "ppi_ml/figures/")
-ggsave(paste0(figure_dir, "cplot_param_test.pdf"), device = "pdf", width = 8, height = 8, units = "in")
-ggsave(paste0(figure_dir, "cplot_param_test.png"), device = "png", width = 8, height = 8, units = "in")
 ```
 
 ## Color by complex
@@ -344,6 +309,14 @@ write_delim(cmplx_labels, paste0(figure_dir, "cmplx_list.txt"), delim="\n", col_
 ggsave(paste0(figure_dir, "cplot_label_test.png"), device = "png", width = 8, height = 8, units = "in")
 
 
+```
+
+## Attempt an interactive plot
+
+```{r}
+library(plotly)
+pplotly <- ggplotly(p)
+pplotly
 ```
 
 ## EXAMPLE CODE

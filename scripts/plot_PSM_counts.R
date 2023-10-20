@@ -5,7 +5,7 @@ setwd("/stor/work/Marcotte/project/rmcox")
 # args
 # ----------------------
 
-ogs = c("KOG0231")
+ogs = c("KOG1922")
 subset = c("human", "strpu", "xenla", "mouse", "chlre", "tetts", "brart")
 pep_file = "leca/ppi_ml/data/cfms/pep_assign_posthoc_summarized.csv"
 outdir = "leca/ppi_ml/figures/posthoc_peps"
