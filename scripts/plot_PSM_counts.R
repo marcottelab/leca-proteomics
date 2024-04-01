@@ -1,12 +1,22 @@
+library(tidyverse)
+library(network)
+library(igraph)
+library(tidygraph)
+library(ggraph)
+theme_set(theme_bw(base_size = 12))
 
+pal_npg <- c("#E64B35", "#4DBBD5", "#00A087", "#3C5488",
+             "#F39B7F", "#8491B4", "#91D1C2", "#DC0000",
+             "#7E6148", "#B09C85")
 setwd("/stor/work/Marcotte/project/rmcox")
 
 # ----------------------
 # args
 # ----------------------
 
-ogs = c("KOG1922")
-subset = c("human", "strpu", "xenla", "mouse", "chlre", "tetts", "brart")
+ogs = c("KOG2386")
+subset = c("human", "strpu", "xenla", "mouse", "chlre", "tetts", "brart", "euggr",
+           "tryb2", "phatc")
 pep_file = "leca/ppi_ml/data/cfms/pep_assign_posthoc_summarized.csv"
 outdir = "leca/ppi_ml/figures/posthoc_peps"
 
@@ -30,6 +40,8 @@ theme_set(cowplot::theme_cowplot())
 pal_clades <- c("#E64B35", "#4DBBD5", "#3C5488", "#00A087")
 rg <- c("#DC0000", "#979797")
 
+pub_pal <- c("#E64B35", "#3578E6", "#4BD2AC", "#665899", "#E6A435","#8A8A95", "#353540")
+
 
 # ----------------------
 # script
@@ -37,7 +49,7 @@ rg <- c("#DC0000", "#979797")
 
 df <- read_csv(pep_file) %>%
   filter(orthogroup %in% ogs, !grepl("Fern", uniprot_id), 
-         #species %in% subset, 
+         #species %in% subset,
          status == "unique", count > 50) %>%
   group_by(orthogroup) %>%
   arrange(desc(orthogroup), desc(count)) %>%
@@ -48,7 +60,8 @@ df$clade <- factor(df$clade, levels = clade_order)
 df$species <- factor(df$species, levels = species_order)
 
 df %>%
-  #filter(clade %in% c("Excavate", "TSAR")) %>% 
+  #filter(clade %in% c("Excavate", "TSAR")) %>%
+  filter(clade == "Amorphea") %>% 
   ggplot(aes(x = gene_name, y = count, fill = clade)) +
     geom_col(width=0.75) +
     scale_fill_manual(values = pal_clades) +

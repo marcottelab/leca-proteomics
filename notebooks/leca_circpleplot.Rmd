@@ -22,7 +22,7 @@ cut_choice_status_col = 'final_status'
 
 ```{r}
 # clusters & complexes
-clst_annot_file <- paste0(workdir, "ppi_ml/results/walktrap/LinearSVC_100feats_fdr10_4steps_nochloro_dynamic_algo_labels_092523.csv") 
+clst_annot_file <- paste0(workdir, "ppi_ml/results/walktrap/LinearSVC_100feats_fdr10_4steps_nochloro_dynamic_algo_labels_092623.csv") 
 
 clst_annot <- read_csv(clst_annot_file) %>%
   mutate(human_family_size = str_count(human_gene_names_primary, ',')+1) %>%
@@ -127,15 +127,21 @@ make_edge <- function(n, clu, cols){
     clu %>% select(!!startcol, !!endcol) %>% rename(from = !!startcol, to = !!endcol)
 }
 
-graph_clst <- function(clusters_uniqued_long, level_vect) {
+graph_clst <- function(clusters_uniqued_long, level_vect, add_origin) {
   # make wide
   clusters_uniqued <- clusters_uniqued_long %>%
     spread(clusterset, clusterid)
   # set origin  
   clusters_uniqued$link <- "origin"
   # get origin col, cut cols, and ID col
-  clusters_uniqued_sel <- clusters_uniqued %>%
+  if(!missing(add_origin)){
+    clusters_uniqued_sel <- clusters_uniqued %>%
     select(link, {{ level_vect }}, ID)
+  } else {
+    clusters_uniqued_sel <- clusters_uniqued %>%
+    select({{ level_vect }}, ID)
+  }
+  
   # get col names
   cols <- names(clusters_uniqued_sel)
   # generate edges
@@ -237,25 +243,26 @@ circlepack_fxn <- function(graph_annot, seed){
 # get cut cols
 cuts <- names(clst_annot[grepl("cut", names(clst_annot))])
 # 7=796,8=1202,9=1608
-cuts_sel <- cuts[c(6,7,8)]
+#cuts_sel <- cuts[c(4,6,8,9)]
+cuts_sel <- cuts[c(6,8,9,10)]
 
 # format chosen clusters
 clusters_uniqued_long <- format_clst(pdf, cuts_sel)
 
-# generate graph objct
-graph <- graph_clst(clusters_uniqued_long, cuts_sel)
+# generate graph object
+graph <- graph_clst(clusters_uniqued_long, cuts_sel, add_origin)
 
 # join labels
 graph <- graph %>% activate("nodes") %>%
   left_join(pdf, by = c("name" = "ID"))
 
 # plot graph object
-p <- circlepack_fxn(graph, 666)
+p <- circlepack_fxn(graph, 13)
 
 # save output
 figure_dir <- paste0(workdir, "ppi_ml/figures/")
-ggsave(paste0(figure_dir, "cplot_annot-status_092523.png"), device = "png", width = 10, height = 10, units = "in")
-ggsave(paste0(figure_dir, "cplot_annot-status_092523.pdf"), device = "pdf", width = 10, height = 10, units = "in")
+ggsave(paste0(figure_dir, "cplot_annot-status_092623.png"), device = "png", width = 10, height = 10, units = "in")
+ggsave(paste0(figure_dir, "cplot_annot-status_092623.pdf"), device = "pdf", width = 10, height = 10, units = "in")
 
 ```
 
@@ -309,14 +316,6 @@ write_delim(cmplx_labels, paste0(figure_dir, "cmplx_list.txt"), delim="\n", col_
 ggsave(paste0(figure_dir, "cplot_label_test.png"), device = "png", width = 8, height = 8, units = "in")
 
 
-```
-
-## Attempt an interactive plot
-
-```{r}
-library(plotly)
-pplotly <- ggplotly(p)
-pplotly
 ```
 
 ## EXAMPLE CODE
