@@ -131,7 +131,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", action="store", type=int, default=None, help="(Optional) Specify seed to make community clusters reproducible.")
     
     # specify annotation file
-    parser.add_argument("--annotations", action="store", help="(Optional) Specify the number of random walks the walktrap clustering algorithm should take. Recommended values are between 3 and 6 (default=4).")
+    parser.add_argument("--annotations", action="store", default=None, help="(Optional) Specify a comma-separated annotation file that shares a common ID column with the scores file.")
     
     
     args = parser.parse_args()
