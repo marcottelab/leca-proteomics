@@ -97,6 +97,7 @@ def main():
     sort_cols = df.columns.values[0:].tolist()
     print("Sort columns:", sort_cols)
     df_out = df.sort_values(sort_cols)
+    df_out = df_out.reset_index()
 
     # join annotations if specified
     if args.annotations:
@@ -106,6 +107,7 @@ def main():
 
     # write results
     outname = args.outfile.split('.csv', 1)[0]
+    print(df_out)
     print(f'[{dt.now()}] Writing results to {outname}...')
     df_out.to_csv(outname+'.csv', index=False)
     df_out.to_excel(outname+'.xlsx', index=False)
